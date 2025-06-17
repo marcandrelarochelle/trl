@@ -703,7 +703,7 @@ class GRPOTrainer(Trainer):
                         reward_func, evaluation_mode=True, device_placement=True
                     )
 
-     def iterable_data_collator(self, features):
+    def iterable_data_collator(self, features):
         """
         Collator function to use for an IterableDataset.
         Calls the super class if the dataset is not an IterableDataset. If it is an IterableDataset it replicates the

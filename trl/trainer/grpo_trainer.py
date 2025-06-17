@@ -715,7 +715,7 @@ class GRPOTrainer(Trainer):
     def get_train_dataloader(self) -> DataLoader:
         if self.train_dataset is None:
             raise ValueError("Trainer: training requires a train_dataset.")
-
+        
         train_dataset = self.train_dataset
         if isinstance(train_dataset, torch.utils.data.IterableDataset):
             batch_size = self.args.eval_batch_size // self.num_generations
@@ -723,12 +723,12 @@ class GRPOTrainer(Trainer):
         else:
             batch_size = self.args.eval_batch_size
             data_collator = self.data_collator
-
+        
         if isinstance(train_dataset, datasets.Dataset):
             train_dataset = self._remove_unused_columns(train_dataset, description="training")
         else:
             data_collator = self._get_collator_with_removed_columns(data_collator, description="training")
-
+        
         dataloader_params = {
             "batch_size": batch_size,
             "collate_fn": data_collator,
@@ -736,20 +736,20 @@ class GRPOTrainer(Trainer):
             "pin_memory": self.args.dataloader_pin_memory,
             "persistent_workers": self.args.dataloader_persistent_workers,
         }
-
+        
         if not isinstance(train_dataset, torch.utils.data.IterableDataset):
             dataloader_params["sampler"] = self._get_train_sampler()
             dataloader_params["drop_last"] = self.args.dataloader_drop_last
             dataloader_params["worker_init_fn"] = seed_worker
             dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
-
+        
         return self.accelerator.prepare(DataLoader(train_dataset, **dataloader_params))
 
     # Copy-pasted from the parent class
     def get_eval_dataloader(self, eval_dataset: Optional[Union[str, Dataset]] = None) -> DataLoader:
         if eval_dataset is None and self.eval_dataset is None:
             raise ValueError("Trainer: evaluation requires an eval_dataset.")
-
+        
         # If we have persistent workers, don't do a fork bomb especially as eval datasets
         # don't change during training
         dataloader_key = eval_dataset if isinstance(eval_dataset, str) else "eval"
@@ -759,7 +759,7 @@ class GRPOTrainer(Trainer):
             and self.args.dataloader_persistent_workers
         ):
             return self.accelerator.prepare(self._eval_dataloaders[dataloader_key])
-
+        
         eval_dataset = (
             self.eval_dataset[eval_dataset]
             if isinstance(eval_dataset, str)
@@ -767,19 +767,19 @@ class GRPOTrainer(Trainer):
             if eval_dataset is not None
             else self.eval_dataset
         )
-
+        
         if isinstance(eval_dataset, torch.utils.data.IterableDataset):
             batch_size = self.args.eval_batch_size // self.num_generations
             data_collator = self.iterable_data_collator
         else:
             batch_size = self.args.eval_batch_size
             data_collator = self.data_collator
-
+        
         if isinstance(eval_dataset, datasets.Dataset):
             eval_dataset = self._remove_unused_columns(eval_dataset, description="evaluation")
         else:
             data_collator = self._get_collator_with_removed_columns(data_collator, description="evaluation")
-
+        
         dataloader_params = {
             "batch_size": batch_size,
             "collate_fn": data_collator,
@@ -787,12 +787,12 @@ class GRPOTrainer(Trainer):
             "pin_memory": self.args.dataloader_pin_memory,
             "persistent_workers": self.args.dataloader_persistent_workers,
         }
-
+        
         if not isinstance(eval_dataset, torch.utils.data.IterableDataset):
             dataloader_params["sampler"] = self._get_eval_sampler(eval_dataset)
             dataloader_params["drop_last"] = self.args.dataloader_drop_last
             dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
-
+        
         # accelerator.free_memory() will destroy the references, so
         # we need to store the non-prepared version
         eval_dataloader = DataLoader(eval_dataset, **dataloader_params)
@@ -801,7 +801,7 @@ class GRPOTrainer(Trainer):
                 self._eval_dataloaders[dataloader_key] = eval_dataloader
             else:
                 self._eval_dataloaders = {dataloader_key: eval_dataloader}
-
+        
         return self.accelerator.prepare(eval_dataloader)
     
     

@@ -252,10 +252,9 @@ def shuffle_sequence_dict(seq_dict: dict[str, Optional[Sequence]]) -> dict[str, 
     ```
     """
     # Determine batch size from the first non-None sequence
-    batch_size = len(next(v for v in seq_dict.values() if v is not None))
-    permutation = torch.randperm(batch_size)
-
     def permute(v: Optional[Sequence]) -> Optional[Sequence]:
+        permutation = torch.randperm(len(v))
+        
         if v is None:
             return None
         if isinstance(v, torch.Tensor):

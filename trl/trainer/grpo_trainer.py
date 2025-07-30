@@ -932,7 +932,7 @@ class GRPOTrainer(Trainer):
             batch_size = self.args.eval_batch_size // self.num_generations
             data_collator = self.iterable_data_collator
         else:
-            batch_size = self.args.eval_batch_size
+            batch_size = self._train_batch_size * self.args.steps_per_generation # < this is the change
             data_collator = self.data_collator
 
         if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
@@ -941,7 +941,7 @@ class GRPOTrainer(Trainer):
             data_collator = self._get_collator_with_removed_columns(data_collator, description="training")
 
         dataloader_params = {
-            "batch_size": self._train_batch_size * self.args.steps_per_generation,  # < this is the change
+            "batch_size": batch_size,  
             "collate_fn": data_collator,
             "num_workers": self.args.dataloader_num_workers,
             "pin_memory": self.args.dataloader_pin_memory,

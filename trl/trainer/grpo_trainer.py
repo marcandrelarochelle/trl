@@ -901,7 +901,7 @@ class GRPOTrainer(Trainer):
         Calls the super class if the dataset is not an IterableDataset. If it is an IterableDataset it replicates the
         original behaviour but changes the batch size.
         """
-        return [x for x in features for _ in range(self.num_generations) for _ in range(self.num_iterations)]  # The duplication happens on the fly.
+        return [feature for _ in range(self.num_iterations * self.args.steps_per_generation) for feature in features for _ in range(self.num_generations)] # The duplication happens on the fly.
 
 
     def _set_signature_columns_if_needed(self):
@@ -928,7 +928,7 @@ class GRPOTrainer(Trainer):
 
         train_dataset = self.train_dataset
         if isinstance(train_dataset, torch.utils.data.IterableDataset):
-            batch_size = self._train_batch_size // self.num_generations
+            batch_size = self.args.generation_batch_size // self.num_generations
             data_collator = self.iterable_data_collator
         else:
             batch_size = self._train_batch_size * self.args.steps_per_generation # < this is the change

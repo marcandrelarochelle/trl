@@ -428,6 +428,32 @@ class GRPOTrainer(BaseTrainer):
             compute_loss_func="non-None value to disable scaling",
         )
 
+        # Setup dynamic sampling used in DAPO
+        self.use_dynamic_sampling = args.use_dynamic_sampling
+        self.max_num_samplings = args.max_num_samplings
+        self.dynamic_sampling_minimum_standard_deviation = args.dynamic_sampling_minimum_standard_deviation
+
+        if self.use_dynamic_sampling and self.max_num_samplings is None:
+            self.max_num_samplings = 1
+            warnings.warn(
+                "Dynamic sampling is enabled, but max_num_samplings is not set. Setting max_num_samplings to 1."
+                "Notice that this is equivalent of not using dynamic sampling."
+            )
+        elif self.use_dynamic_sampling and self.max_num_samplings < 1:
+            self.max_num_samplings = 1
+            warnings.warn(
+                "Dynamic sampling is enabled, but max_num_samplings is less than 1. max_num_samplingsmax_num_samplings must be a positive integer. Setting max_num_samplings to 1."
+                "Notice that this is equivalent of not using dynamic sampling."
+            )
+        elif self.use_dynamic_sampling is False and self.max_num_samplings is not None:
+            self.max_num_samplings = 1
+            warnings.warn(
+                "Dynamic sampling is not enabled, but max_num_samplings is set. Setting max_num_samplings to 1."
+                "Notice that this is equivalent of not using dynamic sampling."
+            )
+        elif self.use_dynamic_sampling is False and self.max_num_samplings is None:
+            self.max_num_samplings = 1
+
         # Reference model
         self.beta = args.beta
         if self.beta == 0.0:
@@ -1445,53 +1471,44 @@ class GRPOTrainer(BaseTrainer):
 
         num_images = [len(img_list) for img_list in images] if images is not None else None
 
-        with torch.no_grad():
-            # If the generation and optimization steps are misaligned—i.e., if generation does not occur at the end of
-            # a full optimizer step (when gradient_accumulation_steps is not a multiple of generate_every)—then the
-            # samples may come from an earlier version of the model. In that case, we need to track old_per_token_logps
-            # for importance sampling. If the steps are aligned, importance sampling isn't necessary and we set
-            # old_per_token_logps to None.
-            # When using vLLM, we always compute old_per_token_logps for importance sampling, it was shown that the
-            # distribution mismatch between vLLM and the training model can be large and harm the training.
-            generate_every = self.args.steps_per_generation * self.num_iterations  # generation frequency
-            if self.args.gradient_accumulation_steps % generate_every != 0 or (
-                self.use_vllm and self.vllm_importance_sampling_correction
-            ):
-                old_per_token_logps, _ = self._get_per_token_logps_and_entropies(
-                    self.model,
-                    prompt_completion_ids,
-                    attention_mask,
-                    logits_to_keep,
-                    batch_size,
-                    num_images=num_images,
-                    **forward_kwargs,  # may contain pixel_values, image_grid_thw, pixel_attention_mask and image_sizes
-                )
-            else:
-                old_per_token_logps = None
-
-            # Compute the importance sampling ratio when using vLLM, to correct for potential distribution mismatch
-            if self.use_vllm and self.vllm_importance_sampling_correction:
-                importance_sampling_ratio = torch.exp(old_per_token_logps - sampling_per_token_logps)
-                importance_sampling_ratio = torch.clamp(
-                    importance_sampling_ratio, max=self.vllm_importance_sampling_cap
-                )
-
-            # Compute the per-token log probabilities for the reference model
-            if self.beta != 0.0:
-                if self.ref_model is not None:
-                    ref_per_token_logps, _ = self._get_per_token_logps_and_entropies(
-                        self.ref_model,
+         # Start sampling until max_num_samplings is reached or a non-zero reward std is achieved
+        for _ in range(self.max_num_samplings):
+            with torch.no_grad():
+                # If the generation and optimization steps are misaligned—i.e., if generation does not occur at the end of
+                # a full optimizer step (when gradient_accumulation_steps is not a multiple of generate_every)—then the
+                # samples may come from an earlier version of the model. In that case, we need to track old_per_token_logps
+                # for importance sampling. If the steps are aligned, importance sampling isn't necessary and we set
+                # old_per_token_logps to None.
+                # When using vLLM, we always compute old_per_token_logps for importance sampling, it was shown that the
+                # distribution mismatch between vLLM and the training model can be large and harm the training.
+                generate_every = self.args.steps_per_generation * self.num_iterations  # generation frequency
+                if self.args.gradient_accumulation_steps % generate_every != 0 or (
+                    self.use_vllm and self.vllm_importance_sampling_correction
+                ):
+                    old_per_token_logps, _ = self._get_per_token_logps_and_entropies(
+                        self.model,
                         prompt_completion_ids,
                         attention_mask,
                         logits_to_keep,
-                        batch_size=batch_size,
+                        batch_size,
                         num_images=num_images,
                         **forward_kwargs,  # may contain pixel_values, image_grid_thw, pixel_attention_mask and image_sizes
                     )
                 else:
-                    with self.accelerator.unwrap_model(self.model).disable_adapter():
+                    old_per_token_logps = None
+
+                # Compute the importance sampling ratio when using vLLM, to correct for potential distribution mismatch
+                if self.use_vllm and self.vllm_importance_sampling_correction:
+                    importance_sampling_ratio = torch.exp(old_per_token_logps - sampling_per_token_logps)
+                    importance_sampling_ratio = torch.clamp(
+                        importance_sampling_ratio, max=self.vllm_importance_sampling_cap
+                    )
+
+                # Compute the per-token log probabilities for the reference model
+                if self.beta != 0.0:
+                    if self.ref_model is not None:
                         ref_per_token_logps, _ = self._get_per_token_logps_and_entropies(
-                            self.model,
+                            self.ref_model,
                             prompt_completion_ids,
                             attention_mask,
                             logits_to_keep,
@@ -1499,48 +1516,65 @@ class GRPOTrainer(BaseTrainer):
                             num_images=num_images,
                             **forward_kwargs,  # may contain pixel_values, image_grid_thw, pixel_attention_mask and image_sizes
                         )
+                    else:
+                        with self.accelerator.unwrap_model(self.model).disable_adapter():
+                            ref_per_token_logps, _ = self._get_per_token_logps_and_entropies(
+                                self.model,
+                                prompt_completion_ids,
+                                attention_mask,
+                                logits_to_keep,
+                                batch_size=batch_size,
+                                num_images=num_images,
+                                **forward_kwargs,  # may contain pixel_values, image_grid_thw, pixel_attention_mask and image_sizes
+                            )
+                else:
+                    ref_per_token_logps = None
+
+            # Decode
+            prompts_text = self.processing_class.batch_decode(prompt_ids, skip_special_tokens=True)
+            completions_text = self.processing_class.batch_decode(completion_ids, skip_special_tokens=True)
+            if is_conversational(inputs[0]):
+                completions = []
+                for prompt, completion in zip(prompts, completions_text):
+                    bootstrap = prompt.pop()["content"] if prompt[-1]["role"] == "assistant" else ""
+                    completions.append([{"role": "assistant", "content": bootstrap + completion}])
             else:
-                ref_per_token_logps = None
+                completions = completions_text
 
-        # Decode
-        prompts_text = self.processing_class.batch_decode(prompt_ids, skip_special_tokens=True)
-        completions_text = self.processing_class.batch_decode(completion_ids, skip_special_tokens=True)
-        if is_conversational(inputs[0]):
-            completions = []
-            for prompt, completion in zip(prompts, completions_text):
-                bootstrap = prompt.pop()["content"] if prompt[-1]["role"] == "assistant" else ""
-                completions.append([{"role": "assistant", "content": bootstrap + completion}])
-        else:
-            completions = completions_text
+            # Calculate rewards for each reward function. rewards_per_func aggregates rewards across all processes. This is
+            # important because rewards will be normalized per group, and completions are distributed. We will later slice
+            # rewards_per_func to extract each process's subset.
+            rewards_per_func = self._calculate_rewards(inputs, prompts, completions, completion_ids_list)
 
-        # Calculate rewards for each reward function. rewards_per_func aggregates rewards across all processes. This is
-        # important because rewards will be normalized per group, and completions are distributed. We will later slice
-        # rewards_per_func to extract each process's subset.
-        rewards_per_func = self._calculate_rewards(inputs, prompts, completions, completion_ids_list)
+            # Apply weights to each reward function's output and sum
+            rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
 
-        # Apply weights to each reward function's output and sum
-        rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
+            # Compute grouped-wise rewards
+            mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
 
-        # Compute grouped-wise rewards
-        mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
+            # Normalize the rewards to compute the advantages
+            mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
+            advantages = rewards - mean_grouped_rewards
 
-        # Normalize the rewards to compute the advantages
-        mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
-        advantages = rewards - mean_grouped_rewards
+            if self.scale_rewards in ["group", "none"]:
+                # If self.scale_rewards = "none", we'll still log group level std
+                std_rewards = rewards.view(-1, self.num_generations).std(dim=1)
+                std_rewards = std_rewards.repeat_interleave(self.num_generations, dim=0)
+            elif self.scale_rewards == "batch":
+                # Compute global std
+                std_rewards = rewards.std().expand_as(rewards)
+            else:
+                raise ValueError(
+                    f"Invalid value for scale_rewards: {self.scale_rewards}. Must be one of 'batch', 'group', or 'none'."
+                )
 
-        if self.scale_rewards in ["group", "none"]:
-            # If self.scale_rewards = "none", we'll still log group level std
-            std_rewards = rewards.view(-1, self.num_generations).std(dim=1)
-            std_rewards = std_rewards.repeat_interleave(self.num_generations, dim=0)
-        elif self.scale_rewards == "batch":
-            # Compute global std
-            std_rewards = rewards.std().expand_as(rewards)
-        else:
-            raise ValueError(
-                f"Invalid value for scale_rewards: {self.scale_rewards}. Must be one of 'batch', 'group', or 'none'."
-            )
+            # Keep sampling if rewards std is lesser than minimum targeted std
+            # Break resampling loop if greater or equal std_grouped_rewards is detected
+            if torch.ge(std_rewards, self.dynamic_sampling_minimum_standard_deviation):
+                break
 
         is_std_zero = torch.isclose(std_rewards, torch.zeros_like(std_rewards))
+
         if self.scale_rewards != "none":
             advantages = advantages / (std_rewards + 1e-4)
 

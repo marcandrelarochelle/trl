@@ -1469,7 +1469,7 @@ class GRPOTrainer(BaseTrainer):
         logits_to_keep = completion_ids.size(1)  # we only need to compute the logits for the completion tokens
         
         num_images = [len(img_list) for img_list in images] if images is not None else None
-        has_images = num_images is not None or num_images > 0
+        has_images = num_images is not None and num_images > 0
         
         batch_size = self.args.per_device_train_batch_size if mode == "train" else self.args.per_device_eval_batch_size
 
@@ -1573,7 +1573,7 @@ class GRPOTrainer(BaseTrainer):
 
             # Keep sampling if rewards std is lesser than minimum targeted std
             # Break resampling loop if greater or equal std_grouped_rewards is detected
-            if torch.ge(std_rewards, self.dynamic_sampling_minimum_standard_deviation):
+            if torch.ge(std_rewards.mean(), self.dynamic_sampling_minimum_standard_deviation):
                 break
 
         is_std_zero = torch.isclose(std_rewards, torch.zeros_like(std_rewards))

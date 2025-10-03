@@ -1467,9 +1467,12 @@ class GRPOTrainer(BaseTrainer):
             )
 
         logits_to_keep = completion_ids.size(1)  # we only need to compute the logits for the completion tokens
+        
+        num_images = [len(img_list) for img_list in images] if images is not None else None
+        has_images = num_images is not None or num_images > 0
+        
         batch_size = self.args.per_device_train_batch_size if mode == "train" else self.args.per_device_eval_batch_size
 
-        num_images = [len(img_list) for img_list in images] if images is not None else None
 
          # Start sampling until max_num_samplings is reached or a non-zero reward std is achieved
         for _ in range(self.max_num_samplings):

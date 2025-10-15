@@ -1512,14 +1512,15 @@ class GRPOTrainer(BaseTrainer):
                 f"Invalid value for scale_rewards: {self.scale_rewards}. Must be one of 'batch', 'group', or 'none'."
             )
 
-        target_standard_deviation = max(torch.quantile(std_rewards, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
-        target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
-        
-        dynamic_sampling_mask = torch.ge(std_rewards, target_standard_deviation)
-        
-        advantages = advantages.where(dynamic_sampling_mask, torch.nan)
-        mean_grouped_rewards = mean_grouped_rewards.where(dynamic_sampling_mask, torch.nan)
-        std_rewards = std_rewards.where(dynamic_sampling_mask, torch.nan)
+        if self.use_dynamic_sampling:
+            target_standard_deviation = max(torch.quantile(std_rewards, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
+            target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
+            
+            dynamic_sampling_mask = torch.ge(std_rewards, target_standard_deviation)
+            
+            advantages = advantages.where(dynamic_sampling_mask, torch.nan)
+            mean_grouped_rewards = mean_grouped_rewards.where(dynamic_sampling_mask, torch.nan)
+            std_rewards = std_rewards.where(dynamic_sampling_mask, torch.nan)
 
         is_std_zero = torch.isclose(std_rewards, torch.zeros_like(std_rewards))
 

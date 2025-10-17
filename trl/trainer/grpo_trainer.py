@@ -1377,6 +1377,9 @@ class GRPOTrainer(BaseTrainer):
 
         prompts = [x["prompt"] for x in inputs]
 
+        if "task" in inputs[0]:
+            tasks = [x["task"] for x in inputs]
+
         if "images" in inputs[0]:
             images = [example.get("images") for example in inputs]
         elif "image" in inputs[0]:
@@ -1508,6 +1511,10 @@ class GRPOTrainer(BaseTrainer):
 
         # Apply weights to each reward function's output and sum
         rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
+
+        if self.dynamic_task_indexer:
+            rewards_per_tasks = { task: reward for task, reward in zip(tasks, rewards) }
+            self.dynamic_task_indexer.update_rewards(rewards_per_tasks)
 
         # Compute grouped-wise rewards
         mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)

@@ -269,13 +269,6 @@ class GRPOConfig(TrainingArguments):
         default=0,
         metadata={"help": "Maximum standard deviation cutoff in a batch."},
     )
-    multi_task_sampling_info: Optional[Union[dict, str]] = field(
-        default=None,
-        metadata={
-            "help": "Keyword arguments for `transformers.AutoModelForCausalLM.from_pretrained`, used when the `model` "
-            "argument of the `GRPOTrainer` is provided as a string."
-        },
-    )
     # Parameters whose default values are overridden from TrainingArguments
     learning_rate: float = field(
         default=1e-6,

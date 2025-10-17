@@ -688,29 +688,14 @@ class GRPOTrainer(BaseTrainer):
         if dataset is None:
             dataset = self.train_dataset
 
-        batch_size = self.args.generation_batch_size // self.num_generations
-
-        if self.args.multi_task_sampling_info:
-            dynamic_task_indexer = DynamicTaskIndexer(self.args.multi_task_sampling_info, int(batch_size, batch_size * 1.5), seed)
-            
-            return RepeatSampler(
-                data_source=dataset,
-                mini_repeat_count=self.num_generations,
-                batch_size=batch_size,
-                repeat_count=self.num_iterations * self.args.steps_per_generation,
-                shuffle=self.shuffle_dataset,
-                seed=self.args.seed,
-                dynamic_task_indexer=dynamic_task_indexer,
-            )
-        else:
-            return RepeatSampler(
-                data_source=dataset,
-                mini_repeat_count=self.num_generations,
-                batch_size=batch_size,
-                repeat_count=self.num_iterations * self.args.steps_per_generation,
-                shuffle=self.shuffle_dataset,
-                seed=self.args.seed,
-            )
+        return RepeatSampler(
+            data_source=dataset,
+            mini_repeat_count=self.num_generations,
+            batch_size=batch_size,
+            repeat_count=self.num_iterations * self.args.steps_per_generation,
+            shuffle=self.shuffle_dataset,
+            seed=self.args.seed,
+        )
 
     def _get_eval_sampler(self, eval_dataset) -> Sampler:
         # See _get_train_sampler for an explanation of the sampler.

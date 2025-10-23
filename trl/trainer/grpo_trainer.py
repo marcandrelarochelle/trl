@@ -1564,8 +1564,8 @@ class GRPOTrainer(BaseTrainer):
             self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
             std_func_rewards = nanstd(rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_func_rewards)
-        self._metrics[mode]["reward"].append(mean_grouped_rewards.mean().item())
-        self._metrics[mode]["reward_std"].append(std_rewards.mean().item())
+        self._metrics[mode]["reward"].append(torch.nanmean(mean_grouped_rewards).item())
+        self._metrics[mode]["reward_std"].append(torch.nanmean(std_rewards).item())
         self._metrics[mode]["frac_reward_zero_std"].append(is_std_zero.float().mean().item())
 
         # Log prompt and completion texts

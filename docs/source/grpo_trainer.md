@@ -80,7 +80,7 @@ This approach gives the method its name: **Group Relative Policy Optimization (G
 > It was shown in the paper [Understanding R1-Zero-Like Training: A Critical Perspective](https://huggingface.co/papers/2503.20783) that scaling by  \\( \text{std}(\mathbf{r}) \\) may cause a question-level difficulty bias. You can disable this scaling by setting `scale_rewards=False` in [`GRPOConfig`].
 
 > [!TIP]
-> [Part I: Tricks or Traps? A Deep Dive into RL for LLM Reasoning (Lite PPO)](https://huggingface.co/papers/2508.08221) showed that calculating the mean at the local (group) level and the standard deviation at the global (batch) level enables more robust reward shaping. You can use this scaling strategy by setting `scale_rewards="batch"` in [`GRPOConfig`].
+> As shown in [Part I: Tricks or Traps? A Deep Dive into RL for LLM Reasoning (Lite PPO)](https://huggingface.co/papers/2508.08221), calculating the mean at the local (group) level and the standard deviation at the global (batch) level enables more robust reward shaping. You can use this scaling strategy by setting `scale_rewards="batch"` in [`GRPOConfig`].
 
 ### Estimating the KL divergence
 
@@ -563,8 +563,14 @@ accelerate launch \
 
 ### Configuration Tips
 
-> [!WARNING]
-> VLM training may fail if image tokens are truncated. We highly recommend disabling truncation by setting `max_prompt_length` to `None`.
+> [!TIP]
+> For VLMs, truncating may remove image tokens, leading to errors during training. To avoid this, set `max_prompt_length=None` in the [`GRPOConfig`]. This allows the model to process the full sequence length without truncating image tokens.
+>
+> ```python
+> GRPOConfig(max_prompt_length=None, ...)
+> ```
+>
+> Only use `max_prompt_length` when you've verified that truncation won't remove image tokens for the entire dataset.
 
 - Use LoRA on vision-language projection layers
 - Enable 4-bit quantization to reduce memory usage

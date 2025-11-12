@@ -239,7 +239,17 @@ class GRPOConfig(TrainingArguments):
             instead.
 
             </Deprecated>
-
+        use_dynamic_sampling (`bool`, *optional*, defaults to `False`):
+            Whether to use dynamic sampling. See the [DAPO paper](https://huggingface.co/papers/2503.14476) for more.
+        max_num_samplings (`int`, *optional*, defaults to `None`):
+            The maximum number of samplings to perform. If `None`, the number of samplings is set to one. Only
+            applicable when `use_dynamic_sampling=True`.
+        dynamic_sampling_minimum_standard_deviation (`float`, *optional*, defaults to `0`):
+            The minimum standard deviation targeted in a batch. Only
+            applicable when `use_dynamic_sampling=True`.
+        dynamic_sampling_maximum_standard_deviation (`float`, *optional*, defaults to `0`):
+            The maximum standard deviation cutoff in a batch. Only
+            applicable when `use_dynamic_sampling=True`.
         vllm_importance_sampling_correction (`bool`, *optional*, defaults to `True`):
             Whether to apply Truncated Importance Sampling (TIS) between vLLM completion logprobs and recomputed
             logprobs. [Your Efficient RL Framework Secretly Brings You Off-Policy RL
@@ -265,6 +275,20 @@ class GRPOConfig(TrainingArguments):
 
     _VALID_DICT_FIELDS = TrainingArguments._VALID_DICT_FIELDS + ["model_init_kwargs"]
 
+    use_dynamic_sampling: bool = field(
+        default=False,
+        metadata={"help": "Whether to use dynamic sampling."},
+    )
+
+    dynamic_sampling_minimum_standard_deviation: Optional[float] = field(
+        default=0,
+        metadata={"help": "Minimum standard deviation targeted in a batch."},
+    )
+
+    dynamic_sampling_maximum_standard_deviation: Optional[float] = field(
+        default=0,
+        metadata={"help": "Maximum standard deviation cutoff in a batch."},
+    )
     # Parameters whose default values are overridden from TrainingArguments
     learning_rate: float = field(
         default=1e-6,

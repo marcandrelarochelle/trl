@@ -770,6 +770,8 @@ class GRPOTrainer(BaseTrainer):
                 dynamic_task_indexer=self.dynamic_task_indexer,
             )
         else:
+            self.dynamic_task_indexer = None
+            
             return RepeatSampler(
                 data_source=dataset,
                 mini_repeat_count=self.num_generations,

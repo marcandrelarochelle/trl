@@ -14,6 +14,7 @@
 
 import warnings
 from dataclasses import dataclass, field
+from typing import Optional, Union
 
 from transformers import TrainingArguments
 

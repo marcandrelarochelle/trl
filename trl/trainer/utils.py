@@ -1693,7 +1693,7 @@ class DynamicTaskIndexer:
     def __init__(self, dataset_info, batch_size: int = 1, maximum_rewards_per_task: int = 10, seed: Optional[int] = None):
         self.batch_size = batch_size
         self.maximum_rewards_per_task = maximum_rewards_per_task
-        self.previous_rewards_per_task: { task: [] for for task in dataset_lengths.keys() }
+        self.previous_rewards_per_task = { task: [] for task in dataset_lengths.keys() }
 
         self.dataset_indexes = { task: { 'length': info['length'], 'offset': info['offset'], 'current_index': 0 } for task, info in dataset_info.items() }
 
@@ -1711,7 +1711,7 @@ class DynamicTaskIndexer:
                 magnitude = np.linalg.norm(std_per_task.values())
         
                 for task, std in std_per_task.items():
-                    std_per_task[task] = std / magnitude if magnitude != 0 else: 1 / len(std_per_task)
+                    std_per_task[task] = std / magnitude if magnitude != 0 else 1 / len(std_per_task)
 
                 dataset_choices = self.generator.choice(len(self.dataset_indexes), self.batch_size, p=std_per_task[task].values())
 
@@ -1788,7 +1788,7 @@ class RepeatSampler(Sampler):
         repeat_count: int = 1,
         shuffle: bool = True,
         seed: int | None = None,
-        dynamic_task_indexer: Optional[DynamicTaskIndex] = None,
+        dynamic_task_indexer: Optional[DynamicTaskIndexer] = None,
     ):
         self.data_source = data_source
         self.mini_repeat_count = mini_repeat_count

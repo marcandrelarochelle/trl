@@ -23,7 +23,7 @@ from collections.abc import Mapping, Sequence, Sized
 from dataclasses import dataclass, field
 from importlib.metadata import version
 from itertools import accumulate
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, List, Optional, TypeVar
 
 import numpy as np
 import pandas as pd

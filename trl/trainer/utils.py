@@ -662,7 +662,7 @@ def get_quantization_config(model_args: ModelConfig) -> BitsAndBytesConfig | Non
             bnb_4bit_compute_dtype=model_args.dtype,  # For consistency with model weights, we use the same value as `dtype`
             bnb_4bit_quant_type=model_args.bnb_4bit_quant_type,
             bnb_4bit_use_double_quant=model_args.use_bnb_nested_quant,
-            bnb_4bit_quant_storage=model_args.dtype,
+            bnb_4bit_quant_storage=model_args.bnb_4bit_quant_storage,
         )
     elif model_args.load_in_8bit:
         quantization_config = BitsAndBytesConfig(
@@ -2043,7 +2043,7 @@ def create_model_from_path(model_id: str, **kwargs) -> PreTrainedModel:
         [`~transformers.PreTrainedModel`]:
             The instantiated model.
     """
-    dtype = kwargs.get("dtype")
+    dtype = kwargs.get("dtype", "auto")
     if isinstance(dtype, torch.dtype) or dtype == "auto" or dtype is None:
         pass  # dtype is already a torch.dtype or "auto" or None
     elif isinstance(dtype, str) and dtype in ["bfloat16", "float16", "float32"]:
@@ -2053,6 +2053,7 @@ def create_model_from_path(model_id: str, **kwargs) -> PreTrainedModel:
             "Invalid `dtype` passed to the config. Expected either 'auto' or a string representing "
             f"a valid `torch.dtype` (e.g., 'float32'), but got {dtype}."
         )
+    kwargs["device_map"] = kwargs.get("device_map", "auto")
     config = AutoConfig.from_pretrained(model_id)
     architecture = getattr(transformers, config.architectures[0])
     model = architecture.from_pretrained(model_id, **kwargs)

@@ -229,7 +229,14 @@ class GRPOConfig(TrainingArguments):
         vllm_importance_sampling_cap (`float`, *optional*, defaults to `2.0`):
             Truncation parameter C for Truncated Importance Sampling (TIS). This sets an upper bound on the importance
             sampling ratio, improving training stability.
-
+        use_dynamic_sampling (`bool`, *optional*, defaults to `False`):
+            Whether to use dynamic sampling. See the [DAPO paper](https://huggingface.co/papers/2503.14476) for more.
+        dynamic_sampling_minimum_standard_deviation (`float`, *optional*, defaults to `0`):
+            The minimum standard deviation targeted in a batch. Only
+            applicable when `use_dynamic_sampling=True`.
+        dynamic_sampling_maximum_standard_deviation (`float`, *optional*, defaults to `0`):
+            The maximum standard deviation cutoff in a batch. Only
+            applicable when `use_dynamic_sampling=True`.        
         > Parameters that control the logging
 
         log_completions (`bool`, *optional*, defaults to `False`):
@@ -613,6 +620,27 @@ class GRPOConfig(TrainingArguments):
         metadata={
             "help": "Truncation parameter C for Truncated Importance Sampling (TIS). This sets an upper bound on the "
             "importance sampling ratio, improving training stability."
+        },
+    )
+    use_dynamic_sampling: bool = field(
+        default=False,
+        metadata={"help": "Whether to use dynamic sampling."},
+    )
+
+    dynamic_sampling_minimum_standard_deviation: Optional[float] = field(
+        default=0,
+        metadata={"help": "Minimum standard deviation targeted in a batch."},
+    )
+
+    dynamic_sampling_maximum_standard_deviation: Optional[float] = field(
+        default=0,
+        metadata={"help": "Maximum standard deviation cutoff in a batch."},
+    )
+    multi_task_sampling_info: Optional[Union[dict, str]] = field(
+        default=None,
+        metadata={
+            "help": "Keyword arguments for `transformers.AutoModelForCausalLM.from_pretrained`, used when the `model` "
+            "argument of the `GRPOTrainer` is provided as a string."
         },
     )
 

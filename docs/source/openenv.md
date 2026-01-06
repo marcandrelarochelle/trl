@@ -5,7 +5,7 @@
 In this guide, we’ll focus on **how to integrate OpenEnv with TRL**, but feel free to explore the links above to dive deeper into OpenEnv itself.
 
 > [!NOTE]
-> You can explore ready-to-use example scripts in the [`examples/scripts/openenv/`](https://github.com/huggingface/trl/blob/main/examples/scripts/openenv/) directory.
+> You can explore ready-to-use example [scripts](example_overview#scripts) and [notebooks](example_overview#notebooks) in the Examples Overview.
 
 > [!NOTE]
 > Explore the [OpenEnv docs](https://meta-pytorch.org/OpenEnv/) for more details.
@@ -15,7 +15,9 @@ In this guide, we’ll focus on **how to integrate OpenEnv with TRL**, but feel 
 To use OpenEnv with TRL, install the framework:
 
 ```bash
-pip install git+https://github.com/meta-pytorch/OpenEnv.git
+# pip install git+https://github.com/meta-pytorch/OpenEnv.git
+# Hotfix: https://github.com/huggingface/trl/pull/4740
+pip install git+https://github.com/meta-pytorch/OpenEnv.git@bf5e968286e0d49cdc03fd904d48faff4b15a437 openenv_core==0.1.1
 ```
 
 ## Using `rollout_func` with OpenEnv environments
@@ -348,6 +350,9 @@ Below is the reward curve from training:
 ## Advanced Example
 
 Let's level this up a bit by training a model to interact with a more complex environment. We'll use the game word guessing game [wordle](https://www.nytimes.com/games/wordle/index.html) from the [`TextArena`](https://meta-pytorch.org/OpenEnv/environments/textarena/) environment.
+
+> [!NOTE]  
+> You can explore the notebook version of this example [here](https://github.com/huggingface/trl/blob/main/examples/notebooks/openenv_wordle_grpo.ipynb).
 
 ### The TextArena Environment
 

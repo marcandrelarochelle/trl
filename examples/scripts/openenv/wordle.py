@@ -1,4 +1,4 @@
-# Copyright 2020-2025 The HuggingFace Team. All rights reserved.
+# Copyright 2020-2026 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# /// script
+# dependencies = [
+#     "trl[vllm]",
+#     "peft",
+#     "trackio>=0.13.0",
+#     "kernels",
+#     "openenv @ git+https://github.com/meta-pytorch/OpenEnv.git",
+#     "openenv_core",
+# ]
+# ///
+
+
 """
 Simple script to run GRPO training with OpenEnv's Wordle environment and vLLM.
 
 Setup:
 
 ```sh
-uv pip install git+https://github.com/meta-pytorch/OpenEnv.git
+# uv pip install git+https://github.com/meta-pytorch/OpenEnv.git
+# Hotfix: https://github.com/huggingface/trl/pull/4740
+uv pip install git+https://github.com/meta-pytorch/OpenEnv.git@bf5e968286e0d49cdc03fd904d48faff4b15a437 openenv_core==0.1.1
 ```
 
 Usage:
@@ -93,7 +107,9 @@ def parse_args() -> argparse.Namespace:
         default="docker-image",
         help="Where to run the environment: 'docker-local' if already running locally, 'docker-image' to run from a Docker image, 'docker-hub' to run from Docker Hub, or 'space' to use a remote Space URL.",
     )
-    parser.add_argument("--env-image", type=str, default="textarena-env:latest", help="Docker image for the TextArena environment.")
+    parser.add_argument(
+        "--env-image", type=str, default="textarena-env:latest", help="Docker image for the TextArena environment."
+    )
     parser.add_argument(
         "--system-prompt-path",
         default="wordle_prompt.txt",
@@ -427,12 +443,13 @@ def main() -> None:
         print(f"🌍 Using existing TextArena Environment (Docker) at: {env_url}")
     elif args.env_mode == "docker-image":
         client = TextArenaEnv.from_docker_image(args.env_image)
-        print(f"🌍 Using TextArena Environment (Docker) from local Image")
+        print("🌍 Using TextArena Environment (Docker) from local Image")
     elif args.env_mode == "docker-hub":
         client = TextArenaEnv.from_hub(args.env_image)
-        print(f"🌍 Using existing TextArena Environment (Docker) from Hub Image")
+        print("🌍 Using existing TextArena Environment (Docker) from Hub Image")
     elif args.env_mode == "space":
         env_url = args.env_host
+        client = TextArenaEnv(base_url=env_url)
         print(f"🌍 Using Hugging Face Space environment at: {env_url}")
     else:
         raise ValueError(f"Unknown environment mode: {args.env_mode}")
@@ -459,6 +476,8 @@ def main() -> None:
         num_generations=args.num_generations,
         max_completion_length=args.max_new_tokens,
         logging_steps=args.logging_steps,
+        report_to="trackio",
+        trackio_space_id=f"wordle-grpo-{sanitize_name(args.model_id)}-{timestamp}",
         save_strategy="steps",
         save_steps=args.save_interval,
         save_total_limit=args.save_total_limit,

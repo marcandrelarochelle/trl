@@ -1,4 +1,4 @@
-# Copyright 2020-2025 The HuggingFace Team. All rights reserved.
+# Copyright 2020-2026 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ from accelerate import PartialState
 from accelerate.utils import DistributedType, broadcast_object_list, gather_object, is_peft_model
 from datasets import Dataset, IterableDataset
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from transformers import AutoTokenizer, is_bitsandbytes_available
+from transformers import AutoTokenizer, TrainerCallback, TrainerControl, TrainerState, is_bitsandbytes_available
 from transformers.data.data_collator import DataCollator
 from transformers.feature_extraction_utils import FeatureExtractionMixin
 from transformers.generation.configuration_utils import GenerationConfig
@@ -38,7 +38,6 @@ from transformers.integrations.integration_utils import is_wandb_available
 from transformers.modeling_utils import PreTrainedModel
 from transformers.processing_utils import ProcessorMixin
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-from transformers.trainer_callback import TrainerCallback, TrainerControl, TrainerState
 from transformers.trainer_utils import EvalPrediction
 from transformers.utils import (
     is_flash_attn_2_available,
@@ -55,13 +54,13 @@ from ...models import prepare_deepspeed
 from ...models.utils import unwrap_model_for_generation
 from ...trainer.sft_trainer import SFTTrainer
 from ...trainer.utils import (
-    DataCollatorForChatML,
     create_model_from_path,
     disable_dropout_in_model,
     empty_cache,
     ensure_master_addr_port,
     pad,
 )
+from ..utils import DataCollatorForChatML
 from .gold_config import GOLDConfig
 
 
@@ -73,7 +72,7 @@ if is_wandb_available():
 
 if is_vllm_available():
     from vllm import LLM, SamplingParams
-    from vllm.sampling_params import GuidedDecodingParams
+    from vllm.sampling_params import StructuredOutputsParams
 
 if is_liger_kernel_available():
     from liger_kernel.chunked_loss import LigerFusedLinearJSDLoss
@@ -864,14 +863,17 @@ class GOLDTrainer(SFTTrainer):
                 teacher_tokenizer=self.teacher_tokenizer,
             )
 
-        self.generation_config = GenerationConfig(
-            max_new_tokens=args.max_completion_length,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            do_sample=True,
-            top_k=args.top_k,
-            pad_token_id=self.processing_class.pad_token_id,
-        )
+        generation_kwargs = {
+            "max_new_tokens": args.max_completion_length,
+            "temperature": args.temperature,
+            "top_p": args.top_p,
+            "do_sample": True,
+            "top_k": args.top_k,
+            "pad_token_id": self.processing_class.pad_token_id,
+        }
+        self.generation_config = GenerationConfig(**generation_kwargs)
+        # Keep training-specific generation kwargs to overwrite model's original generation config
+        self.generation_kwargs = generation_kwargs
         if (
             hasattr(self.model.generation_config, "eos_token_id")
             and self.model.generation_config.eos_token_id is not None
@@ -976,7 +978,7 @@ class GOLDTrainer(SFTTrainer):
                 self.accelerator.wait_for_everyone()
             else:
                 raise ValueError(f"Unknown vllm_mode: {self.vllm_mode}")
-            self.vllm_guided_decoding_regex = args.vllm_guided_decoding_regex
+            self.vllm_structured_outputs_regex = args.vllm_structured_outputs_regex
             self.vllm_sync_frequency = args.vllm_sync_frequency
             self._last_vllm_sync_step = -1
 
@@ -1055,18 +1057,7 @@ class GOLDTrainer(SFTTrainer):
                 def _func(example):
                     return {"text": formatting_func(example)}
 
-                try:
-                    dataset = dataset.map(_func, batched=False, **map_kwargs)
-                except Exception as e:
-                    warnings.warn(
-                        f"Failed to apply the formatting function due to the following error: {e}. This may be "
-                        "because the function is designed for batched input. Please update it to process one example "
-                        "at a time (i.e., accept and return a single example). For now, we will attempt to apply the "
-                        "function in batched mode, but note that batched formatting is deprecated and will be removed "
-                        "in version 0.21.",
-                        DeprecationWarning,
-                    )
-                    dataset = dataset.map(_func, batched=True, **map_kwargs)
+                dataset = dataset.map(_func, batched=False, **map_kwargs)
 
             # Convert the dataset to ChatML if needed
             if isinstance(dataset, Dataset):  # `IterableDataset.map` does not support `desc`
@@ -1129,7 +1120,8 @@ class GOLDTrainer(SFTTrainer):
                         warnings.warn(
                             "Mismatch between tokenized prompt and the start of tokenized prompt+completion. "
                             "This may be due to unexpected tokenizer behavior, whitespace issues, or special "
-                            "token handling. Verify that the tokenizer is processing text consistently."
+                            "token handling. Verify that the tokenizer is processing text consistently.",
+                            stacklevel=2,
                         )
 
                     # Create a completion mask
@@ -1683,7 +1675,7 @@ class GOLDTrainer(SFTTrainer):
                     top_k=top_k,
                     min_p=min_p,
                     max_tokens=max_completion_length,
-                    guided_decoding_regex=self.vllm_guided_decoding_regex,
+                    structured_outputs_regex=self.vllm_structured_outputs_regex,
                 )["completion_ids"]
             else:
                 completion_ids = [None] * len(all_prompts_text)
@@ -1694,10 +1686,12 @@ class GOLDTrainer(SFTTrainer):
             )
             completion_ids = completion_ids[process_slice]
         elif self.vllm_mode == "colocate":
-            if self.vllm_guided_decoding_regex:
-                guided_decoding = GuidedDecodingParams(backend="outlines", regex=self.vllm_guided_decoding_regex)
+            if self.vllm_structured_outputs_regex:
+                structured_outputs = StructuredOutputsParams(
+                    backend="outlines", regex=self.vllm_structured_outputs_regex
+                )
             else:
-                guided_decoding = None
+                structured_outputs = None
             sampling_params = SamplingParams(
                 n=1,
                 repetition_penalty=repetition_penalty,
@@ -1706,7 +1700,7 @@ class GOLDTrainer(SFTTrainer):
                 top_k=top_k,
                 min_p=min_p,
                 max_tokens=max_completion_length,
-                guided_decoding=guided_decoding,
+                structured_outputs=structured_outputs,
             )
 
             if hasattr(self, "vllm_tp_group") and self.vllm_tensor_parallel_size > 1:
@@ -1845,6 +1839,8 @@ class GOLDTrainer(SFTTrainer):
         if self.vllm_mode == "colocate" and self.vllm_enable_sleep_mode:
             empty_cache()
             self.vllm_engine.wake_up(tags=["weights"])
+            # Work around for https://github.com/vllm-project/vllm/issues/29341
+            self.vllm_engine.collective_rpc("reload_weights")
 
         if is_peft_model(self.model):
             # With PEFT and FSDP/DeepSpeed ZeRO Stage 3, we must gather the full model at once before merging, as
@@ -1924,7 +1920,13 @@ class GOLDTrainer(SFTTrainer):
                 )
                 new_input_ids, new_attention_mask, new_labels, prompt_texts, completion_texts = result
             else:
-                with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
+                with (
+                    unwrap_model_for_generation(
+                        model,
+                        self.accelerator,
+                        generation_kwargs=self.generation_kwargs,  # Override model.generation_config with generation_kwargs to fix transformers#42762
+                    ) as unwrapped_model
+                ):
                     result = self.generate_on_policy_outputs(
                         unwrapped_model, inputs, self.generation_config, self.processing_class.pad_token_id
                     )

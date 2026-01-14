@@ -1955,7 +1955,7 @@ class GRPOTrainer(BaseTrainer):
         
         batch_size = self.args.per_device_train_batch_size if mode == "train" else self.args.per_device_eval_batch_size
         
-        # When gradient checkpointing is enabled with use_reentrant=True (default), calling the model inside a
+        # When gradient checkpointing is enabled with use_reentrant=True (non default), calling the model inside a
         # torch.no_grad() block triggers a harmless PyTorch warning ("None of the inputs have requires_grad=True").
         # Temporarily disable checkpointing to avoid this warning during inference.
         with torch.no_grad(), disable_gradient_checkpointing(self.model, self.args.gradient_checkpointing_kwargs):

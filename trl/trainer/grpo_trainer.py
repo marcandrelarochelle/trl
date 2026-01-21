@@ -565,6 +565,12 @@ class GRPOTrainer(BaseTrainer):
             compute_loss_func="non-None value to disable scaling",
         )
 
+        # Setup dynamic sampling used in DAPO
+        self.use_dynamic_sampling = args.use_dynamic_sampling
+        self.dynamic_sampling_minimum_standard_deviation = args.dynamic_sampling_minimum_standard_deviation
+        self.dynamic_sampling_maximum_standard_deviation = args.dynamic_sampling_maximum_standard_deviation
+
+
         # Reference model
         self.beta = args.beta
         if self.beta == 0.0:
@@ -865,14 +871,32 @@ class GRPOTrainer(BaseTrainer):
         #                                          ...
         if dataset is None:
             dataset = self.train_dataset
-        return RepeatSampler(
-            data_source=dataset,
-            mini_repeat_count=self.num_generations,
-            batch_size=self.args.generation_batch_size // self.num_generations,
-            repeat_count=self.num_iterations * self.args.steps_per_generation,
-            shuffle=self.shuffle_dataset,
-            seed=self.args.seed,
-        )
+
+        batch_size = self.args.generation_batch_size // self.num_generations
+
+        if self.args.multi_task_sampling_info:
+            self.dynamic_task_indexer = DynamicTaskIndexer(self.args.multi_task_sampling_info, int(batch_size, batch_size * 1.5), seed)
+            
+            return RepeatSampler(
+                data_source=dataset,
+                mini_repeat_count=self.num_generations,
+                batch_size=batch_size,
+                repeat_count=self.num_iterations * self.args.steps_per_generation,
+                shuffle=self.shuffle_dataset,
+                seed=self.args.seed,
+                dynamic_task_indexer=self.dynamic_task_indexer,
+            )
+        else:
+            self.dynamic_task_indexer = None
+            
+            return RepeatSampler(
+                data_source=dataset,
+                mini_repeat_count=self.num_generations,
+                batch_size=batch_size,
+                repeat_count=self.num_iterations * self.args.steps_per_generation,
+                shuffle=self.shuffle_dataset,
+                seed=self.args.seed,
+            )
 
     def _get_eval_sampler(self, eval_dataset) -> Sampler:
         # See _get_train_sampler for an explanation of the sampler.
@@ -1860,6 +1884,9 @@ class GRPOTrainer(BaseTrainer):
 
         prompts = [x["prompt"] for x in inputs]
 
+        if "task" in inputs[0]:
+            tasks = [x["task"] for x in inputs]
+
         if "images" in inputs[0]:
             images = [example.get("images") for example in inputs]
         elif "image" in inputs[0]:
@@ -1943,7 +1970,14 @@ class GRPOTrainer(BaseTrainer):
                 [token_type_ids, token_type_ids.new_zeros(completion_ids.shape)], dim=1
             )
 
-        # When gradient checkpointing is enabled with use_reentrant=True (non default), calling the model inside a
+        logits_to_keep = completion_ids.size(1)  # we only need to compute the logits for the completion tokens
+        
+        num_images = [len(img_list) for img_list in images] if images is not None else None
+        has_images = num_images is not None and num_images > 0
+        
+        batch_size = self.args.per_device_train_batch_size if mode == "train" else self.args.per_device_eval_batch_size
+        
+        # When gradient checkpointing is enabled with use_reentrant=True (default), calling the model inside a
         # torch.no_grad() block triggers a harmless PyTorch warning ("None of the inputs have requires_grad=True").
         # Temporarily disable checkpointing to avoid this warning during inference.
         with torch.no_grad(), disable_gradient_checkpointing(self.model, self.args.gradient_checkpointing_kwargs):
@@ -2089,11 +2123,26 @@ class GRPOTrainer(BaseTrainer):
             advantages = (rewards - rewards.mean()) / (std_rewards + 1e-4)
             is_std_zero = torch.isclose(std_rewards, torch.zeros_like(std_rewards))  # for logging
 
+        
         else:
             raise ValueError(
                 f"Invalid multi_objective_aggregation: {self.multi_objective_aggregation}. Must be "
                 "'sum_then_normalize' or 'normalize_then_sum'."
             )
+            
+        if self.dynamic_task_indexer:
+            rewards_per_tasks = { task: reward for task, reward in zip(tasks, rewards) }
+            self.dynamic_task_indexer.update_rewards(rewards_per_tasks)
+
+        if self.use_dynamic_sampling:
+            target_standard_deviation = max(torch.quantile(std_rewards, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
+            target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
+            
+            dynamic_sampling_mask = torch.ge(std_rewards, target_standard_deviation)
+            
+            advantages = advantages.where(dynamic_sampling_mask, torch.nan)
+            mean_grouped_rewards = mean_grouped_rewards.where(dynamic_sampling_mask, torch.nan)
+            std_rewards = std_rewards.where(dynamic_sampling_mask, torch.nan)
 
         # Slice to keep only the local part of the data
         process_slice = slice(
@@ -2109,8 +2158,9 @@ class GRPOTrainer(BaseTrainer):
             self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
             std_func_rewards = nanstd(rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_func_rewards)
+
         rewards = rewards_per_func.nansum(dim=1)
-        self._metrics[mode]["reward"].append(rewards.mean().item())
+        self._metrics[mode]["reward"].append(torch.nanmean(rewards).item())
         self._metrics[mode]["reward_std"].append(rewards.std().item())
         self._metrics[mode]["frac_reward_zero_std"].append(is_std_zero.float().mean().item())
 

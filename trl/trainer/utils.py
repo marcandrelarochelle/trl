@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.metadata import version
 from itertools import accumulate
-from typing import TypeVar
+from typing import Any, Literal, List, Optional, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -821,6 +821,48 @@ def print_prompt_completions_sample(
     console.print(panel)
 
 
+class DynamicTaskIndexer:
+    def __init__(self, dataset_info, batch_size: int = 1, maximum_rewards_per_task: int = 10, seed: Optional[int] = None):
+        self.batch_size = batch_size
+        self.maximum_rewards_per_task = maximum_rewards_per_task
+        self.previous_rewards_per_task = { task: [] for task in dataset_lengths.keys() }
+
+        self.dataset_indexes = { task: { 'length': info['length'], 'offset': info['offset'], 'current_index': 0 } for task, info in dataset_info.items() }
+
+        if seed is not None:
+            self.generator = np.random.default_rng(seed=seed)
+    
+    def get_indexes_generator(self, indexes: List[int]):
+        accumulator = []
+        
+        for index in indexes:
+            remainder = self.batch_size % index
+            
+            if remainder == 0:
+                std_per_task = { task: nanstd(rewards) for rewards in self.previous_rewards_per_task.values() }
+                magnitude = np.linalg.norm(std_per_task.values())
+        
+                for task, std in std_per_task.items():
+                    std_per_task[task] = std / magnitude if magnitude != 0 else 1 / len(std_per_task)
+
+                dataset_choices = self.generator.choice(len(self.dataset_indexes), self.batch_size, p=std_per_task[task].values())
+
+            index_info = self.dataset_indexes[dataset_choices[remainder]]
+            accumulator.append((index_info['current_index'] + index_info['offset']) % index_info['length'])
+            index_info['current_index'] += 1
+
+            if len(accumulator) == self.batch_size:
+                yield accumulator
+                accumulator.clear()
+
+    def update_rewards(self, rewards_per_task):
+        for task, reward in rewards_per_task.items():
+            if len(self.previous_rewards_per_task[task]) + 1 > maximum_rewards_per_task:
+                self.previous_rewards_per_task[task].pop(0)
+
+            self.previous_rewards_per_task[task].append(reward)
+                
+
 class RepeatSampler(Sampler):
     """
     Sampler that repeats the indices of a dataset in a structured manner.
@@ -878,6 +920,7 @@ class RepeatSampler(Sampler):
         repeat_count: int = 1,
         shuffle: bool = True,
         seed: int | None = None,
+        dynamic_task_indexer: Optional[DynamicTaskIndexer] = None,
     ):
         self.data_source = data_source
         self.mini_repeat_count = mini_repeat_count
@@ -886,6 +929,7 @@ class RepeatSampler(Sampler):
         self.num_samples = len(data_source)
         self.shuffle = shuffle
         self.seed = seed
+        self.dynamic_task_indexer = dynamic_task_indexer
 
         if shuffle:
             self.generator = torch.Generator()  # Create a local random generator
@@ -899,13 +943,16 @@ class RepeatSampler(Sampler):
         else:
             indexes = list(range(self.num_samples))
 
-        #    [2, 4, 3, 1, 0, 6, 5]
-        # -> [[2, 4, 3], [1, 0, 6], [5]]  (batch_size = 3)
-        indexes = [indexes[i : i + self.batch_size] for i in range(0, len(indexes), self.batch_size)]
+        if not self.dynamic_task_indexer:
+            #    [2, 4, 3, 1, 0, 6, 5]
+            # -> [[2, 4, 3], [1, 0, 6], [5]]  (batch_size = 3)
+            indexes = [indexes[i : i + self.batch_size] for i in range(0, len(indexes), self.batch_size)]
+        else:
+            indexes = self.dynamic_task_indexer.get_indexes_generator(indexes)
 
         #    [[2, 4, 3], [1, 0, 6], [5]]
         # -> [[2, 4, 3], [1, 0, 6]]
-        indexes = [chunk for chunk in indexes if len(chunk) == self.batch_size]
+        indexes = (chunk for chunk in indexes if len(chunk) == self.batch_size)
 
         for chunk in indexes:
             for _ in range(self.repeat_count):

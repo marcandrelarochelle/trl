@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
+from typing import Optional, Union
 
 import transformers
 from packaging.version import Version
@@ -264,6 +265,26 @@ class GRPOConfig(TrainingArguments):
             Maximum number of tool-calling turns when training an agent. If `None`, there is no limit and generation
             stops when the model generates a response turn with no tool calls or when the total response length reaches
             `max_model_length`.
+        use_liger_loss (`bool`, *optional*):
+            Whether to use Liger loss.
+
+            <Deprecated version="0.25.0">
+
+            Parameter `use_liger_loss` is deprecated and will be removed in version 0.28.0. Use `use_liger_kernel`
+            instead.
+
+            </Deprecated>
+        use_dynamic_sampling (`bool`, *optional*, defaults to `False`):
+            Whether to use dynamic sampling. See the [DAPO paper](https://huggingface.co/papers/2503.14476) for more.
+        max_num_samplings (`int`, *optional*, defaults to `None`):
+            The maximum number of samplings to perform. If `None`, the number of samplings is set to one. Only
+            applicable when `use_dynamic_sampling=True`.
+        dynamic_sampling_minimum_standard_deviation (`float`, *optional*, defaults to `0`):
+            The minimum standard deviation targeted in a batch. Only
+            applicable when `use_dynamic_sampling=True`.
+        dynamic_sampling_maximum_standard_deviation (`float`, *optional*, defaults to `0`):
+            The maximum standard deviation cutoff in a batch. Only
+            applicable when `use_dynamic_sampling=True`.
         vllm_importance_sampling_correction (`bool`, *optional*, defaults to `True`):
             Whether to apply Importance Sampling (IS) to correct for the mismatch between vLLM completion logprobs and
             recomputed training logprobs. If set to `False`, no IS is applied regardless of
@@ -306,6 +327,27 @@ class GRPOConfig(TrainingArguments):
 
     _VALID_DICT_FIELDS = TrainingArguments._VALID_DICT_FIELDS + ["model_init_kwargs"]
 
+    use_dynamic_sampling: bool = field(
+        default=False,
+        metadata={"help": "Whether to use dynamic sampling."},
+    )
+
+    dynamic_sampling_minimum_standard_deviation: Optional[float] = field(
+        default=0,
+        metadata={"help": "Minimum standard deviation targeted in a batch."},
+    )
+
+    dynamic_sampling_maximum_standard_deviation: Optional[float] = field(
+        default=0,
+        metadata={"help": "Maximum standard deviation cutoff in a batch."},
+    )
+    multi_task_sampling_info: Optional[Union[dict, str]] = field(
+        default=None,
+        metadata={
+            "help": "Keyword arguments for `transformers.AutoModelForCausalLM.from_pretrained`, used when the `model` "
+            "argument of the `GRPOTrainer` is provided as a string."
+        },
+    )
     # Parameters whose default values are overridden from TrainingArguments
     learning_rate: float = field(
         default=1e-6,

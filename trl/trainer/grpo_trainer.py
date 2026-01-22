@@ -2108,10 +2108,11 @@ class GRPOTrainer(BaseTrainer):
                 )
 
             if self.use_dynamic_sampling:
-                target_standard_deviation = max(torch.quantile(std_rewards, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
-                target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
-                
-                dynamic_sampling_mask = torch.ge(std_rewards, target_standard_deviation)
+                with torch.no_grad():
+                    target_standard_deviation = max(torch.quantile(std_rewards, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
+                    target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
+                    
+                    dynamic_sampling_mask = torch.ge(std_rewards, target_standard_deviation)
 
                 rewards = torch.masked.masked_tensor(std_rewards, dynamic_sampling_mask)
                 mean_grouped_rewards = torch.masked.masked_tensor(mean_grouped_rewards, dynamic_sampling_mask)
@@ -2128,10 +2129,11 @@ class GRPOTrainer(BaseTrainer):
             std_k = nanstd(grouped, dim=1, keepdim=True) if num_generations > 1 else torch.zeros_like(mean_k)
     
             if self.use_dynamic_sampling:
-                target_standard_deviation = max(torch.quantile(std_k, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
-                target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
-                
-                dynamic_sampling_mask = torch.ge(std_k, target_standard_deviation)
+                with torch.no_grad():
+                    target_standard_deviation = max(torch.quantile(std_k, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
+                    target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
+                    
+                    dynamic_sampling_mask = torch.ge(std_k, target_standard_deviation)
 
                 grouped = torch.masked.masked_tensor(grouped, dynamic_sampling_mask)
                 mean_k = torch.masked.masked_tensor(mean_k, dynamic_sampling_mask)

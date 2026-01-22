@@ -2134,15 +2134,16 @@ class GRPOTrainer(BaseTrainer):
             
             if self.use_dynamic_sampling:
                 with torch.no_grad():
-                    std_per_reward_funcs = std_k.view(-1, len(self.reward_funcs))
+                    std_per_reward_funcs = std_k.view(-1, len(self.reward_funcs)).repeat_interleave(2, dim=0)
                     
                     target_standard_deviation = max(torch.quantile(std_per_reward_funcs, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
                     target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
                     
                     dynamic_sampling_mask = torch.ge(std_per_reward_funcs, target_standard_deviation)
-                    rewards = torch.masked.masked_tensor(rewards, dynamic_sampling_mask).nansum(dim=1)
+                    
+                    rewards = torch.masked.masked_tensor(rewards, dynamic_sampling_mask && ~torch.isnan(rewards)).sum(dim=1)
             else:
-                rewards = rewards.nansum(dim=1)
+                rewards = rewards.sum(dim=1)
            
             std_rewards = rewards.std().expand_as(rewards) if rewards.numel() > 1 else torch.zeros_like(rewards)
             advantages = (rewards - rewards.mean()) / (std_rewards + 1e-4)

@@ -2127,21 +2127,23 @@ class GRPOTrainer(BaseTrainer):
             grouped = rewards_per_func.view(-1, num_generations, len(self.reward_funcs))
             mean_k = torch.nanmean(grouped, dim=1, keepdim=True)
             std_k = nanstd(grouped, dim=1, keepdim=True) if num_generations > 1 else torch.zeros_like(mean_k)
-    
-            if self.use_dynamic_sampling:
-                with torch.no_grad():
-                    target_standard_deviation = max(torch.quantile(std_k, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
-                    target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
-                    
-                    dynamic_sampling_mask = torch.ge(std_k, target_standard_deviation)
 
-                grouped = torch.masked.masked_tensor(grouped, dynamic_sampling_mask)
-                mean_k = torch.masked.masked_tensor(mean_k, dynamic_sampling_mask)
-                std_k = torch.masked.masked_tensor(std_k, dynamic_sampling_mask)
-            
             reward_k = (grouped - mean_k) / (std_k + 1e-4)
             reward_k = reward_k.view(-1, len(self.reward_funcs))
-            rewards = (reward_k * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
+            rewards = (reward_k * self.reward_weights.to(device).unsqueeze(0))
+            
+            if self.use_dynamic_sampling:
+                with torch.no_grad():
+                    std_per_reward_funcs = std_k.view(-1, len(self.reward_funcs))
+                    
+                    target_standard_deviation = max(torch.quantile(std_per_reward_funcs, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
+                    target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
+                    
+                    dynamic_sampling_mask = torch.ge(std_per_reward_funcs, target_standard_deviation)
+                    rewards = torch.masked.masked_tensor(rewards, dynamic_sampling_mask).nansum(dim=1)
+            else:
+                rewards = rewards.nansum(dim=1)
+           
             std_rewards = rewards.std().expand_as(rewards) if rewards.numel() > 1 else torch.zeros_like(rewards)
             advantages = (rewards - rewards.mean()) / (std_rewards + 1e-4)
             is_std_zero = torch.isclose(std_rewards, torch.zeros_like(std_rewards))  # for logging

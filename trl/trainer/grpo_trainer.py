@@ -2112,9 +2112,10 @@ class GRPOTrainer(BaseTrainer):
                 target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
                 
                 dynamic_sampling_mask = torch.ge(std_rewards, target_standard_deviation)
-                
-                mean_grouped_rewards = mean_grouped_rewards.where(dynamic_sampling_mask, torch.nan)
-                std_rewards = std_rewards.where(dynamic_sampling_mask, torch.nan)
+
+                rewards = torch.masked.masked_tensor(std_rewards, dynamic_sampling_mask)
+                mean_grouped_rewards = torch.masked.masked_tensor(mean_grouped_rewards, dynamic_sampling_mask)
+                std_rewards = torch.masked.masked_tensor(std_rewards, dynamic_sampling_mask)
 
             advantages = rewards - mean_grouped_rewards
             if self.scale_rewards != "none":
@@ -2131,9 +2132,10 @@ class GRPOTrainer(BaseTrainer):
                 target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
                 
                 dynamic_sampling_mask = torch.ge(std_k, target_standard_deviation)
-                
-                mean_k = mean_k.where(dynamic_sampling_mask, torch.nan)
-                std_k = std_k.where(dynamic_sampling_mask, torch.nan)
+
+                grouped = torch.masked.masked_tensor(grouped, dynamic_sampling_mask)
+                mean_k = torch.masked.masked_tensor(mean_k, dynamic_sampling_mask)
+                std_k = torch.masked.masked_tensor(std_k, dynamic_sampling_mask)
             
             reward_k = (grouped - mean_k) / (std_k + 1e-4)
             reward_k = reward_k.view(-1, len(self.reward_funcs))

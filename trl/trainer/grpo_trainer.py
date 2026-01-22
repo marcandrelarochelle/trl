@@ -2141,7 +2141,7 @@ class GRPOTrainer(BaseTrainer):
                     
                     dynamic_sampling_mask = torch.ge(std_per_reward_funcs, target_standard_deviation)
                     
-                    rewards = torch.masked.masked_tensor(rewards, dynamic_sampling_mask && ~torch.isnan(rewards)).sum(dim=1)
+                    rewards = torch.masked.masked_tensor(rewards, dynamic_sampling_mask & ~torch.isnan(rewards)).sum(dim=1)
             else:
                 rewards = rewards.sum(dim=1)
            

@@ -2126,7 +2126,7 @@ class GRPOTrainer(BaseTrainer):
             mean_k = torch.nanmean(grouped, dim=1, keepdim=True)
             std_k = nanstd(grouped, dim=1, keepdim=True) if num_generations > 1 else torch.zeros_like(mean_k)
     
-             if self.use_dynamic_sampling:
+            if self.use_dynamic_sampling:
                 target_standard_deviation = max(torch.quantile(std_k, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
                 target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
                 

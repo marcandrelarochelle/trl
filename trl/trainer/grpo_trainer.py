@@ -2107,6 +2107,15 @@ class GRPOTrainer(BaseTrainer):
                     f"Invalid value for scale_rewards: {self.scale_rewards}. Must be one of 'batch', 'group', or 'none'."
                 )
 
+            if self.use_dynamic_sampling:
+                target_standard_deviation = max(torch.quantile(std_rewards, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
+                target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
+                
+                dynamic_sampling_mask = torch.ge(std_rewards, target_standard_deviation)
+                
+                mean_grouped_rewards = mean_grouped_rewards.where(dynamic_sampling_mask, torch.nan)
+                std_rewards = std_rewards.where(dynamic_sampling_mask, torch.nan)
+
             advantages = rewards - mean_grouped_rewards
             if self.scale_rewards != "none":
                 advantages = advantages / (std_rewards + 1e-4)
@@ -2116,6 +2125,16 @@ class GRPOTrainer(BaseTrainer):
             grouped = rewards_per_func.view(-1, num_generations, len(self.reward_funcs))
             mean_k = torch.nanmean(grouped, dim=1, keepdim=True)
             std_k = nanstd(grouped, dim=1, keepdim=True) if num_generations > 1 else torch.zeros_like(mean_k)
+    
+             if self.use_dynamic_sampling:
+                target_standard_deviation = max(torch.quantile(std_k, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
+                target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
+                
+                dynamic_sampling_mask = torch.ge(std_k, target_standard_deviation)
+                
+                mean_k = mean_k.where(dynamic_sampling_mask, torch.nan)
+                std_k = std_k.where(dynamic_sampling_mask, torch.nan)
+            
             reward_k = (grouped - mean_k) / (std_k + 1e-4)
             reward_k = reward_k.view(-1, len(self.reward_funcs))
             rewards = (reward_k * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
@@ -2133,16 +2152,6 @@ class GRPOTrainer(BaseTrainer):
         if self.dynamic_task_indexer:
             rewards_per_tasks = { task: reward for task, reward in zip(tasks, rewards) }
             self.dynamic_task_indexer.update_rewards(rewards_per_tasks)
-
-        if self.use_dynamic_sampling:
-            target_standard_deviation = max(torch.quantile(std_rewards, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
-            target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
-            
-            dynamic_sampling_mask = torch.ge(std_rewards, target_standard_deviation)
-            
-            advantages = advantages.where(dynamic_sampling_mask, torch.nan)
-            mean_grouped_rewards = mean_grouped_rewards.where(dynamic_sampling_mask, torch.nan)
-            std_rewards = std_rewards.where(dynamic_sampling_mask, torch.nan)
 
         # Slice to keep only the local part of the data
         process_slice = slice(

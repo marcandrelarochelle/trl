@@ -834,7 +834,7 @@ class DynamicTaskIndexer:
     def __init__(self, dataset_info, batch_size: int = 1, maximum_rewards_per_task: int = 10, seed: Optional[int] = None):
         self.batch_size = batch_size
         self.maximum_rewards_per_task = maximum_rewards_per_task
-        self.previous_rewards_per_task = { task: [] for task in dataset_lengths.keys() }
+        self.previous_rewards_per_task = { task: [] for task in dataset_info.keys() }
 
         self.dataset_indexes = { task: { 'length': info['length'], 'offset': info['offset'], 'current_index': 0 } for task, info in dataset_info.items() }
 
@@ -866,7 +866,7 @@ class DynamicTaskIndexer:
 
     def update_rewards(self, rewards_per_task):
         for task, reward in rewards_per_task.items():
-            if len(self.previous_rewards_per_task[task]) + 1 > maximum_rewards_per_task:
+            if len(self.previous_rewards_per_task[task]) + 1 > self.maximum_rewards_per_task:
                 self.previous_rewards_per_task[task].pop(0)
 
             self.previous_rewards_per_task[task].append(reward)

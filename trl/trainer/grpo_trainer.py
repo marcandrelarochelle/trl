@@ -73,6 +73,7 @@ from .base_trainer import BaseTrainer
 from .callbacks import SyncRefModelCallback
 from .grpo_config import GRPOConfig
 from .utils import (
+    DynamicTaskIndexer,
     RepeatSampler,
     create_model_from_path,
     disable_dropout_in_model,
@@ -852,7 +853,7 @@ class GRPOTrainer(BaseTrainer):
         batch_size = self.args.generation_batch_size // self.num_generations
 
         if self.args.multi_task_sampling_info:
-            self.dynamic_task_indexer = DynamicTaskIndexer(self.args.multi_task_sampling_info, int(batch_size, batch_size * 1.5), seed)
+            self.dynamic_task_indexer = DynamicTaskIndexer(self.args.multi_task_sampling_info, int(batch_size, batch_size * 1.5), self.args.seed)
             
             return RepeatSampler(
                 data_source=dataset,

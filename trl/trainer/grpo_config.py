@@ -193,6 +193,16 @@ class GRPOConfig(TrainingArguments):
         reward_weights (`list[float]`, *optional*):
             Weights for each reward function. Must match the number of reward functions. If `None`, all rewards are
             weighted equally with weight `1.0`.
+        multi_objective_aggregation (`str`, *optional*, defaults to `"sum_then_normalize"`):
+            Method to aggregate multiple reward functions. Supported values are:
+
+            - `"sum_then_normalize"` (default): First sums the weighted rewards from each reward function, then applies
+              reward scaling/normalization as specified by `scale_rewards` (see `scale_rewards` for details).
+            - `"normalize_then_sum"`: First normalizes/scales each reward function across generations (within each
+              group), then sums the normalized rewards using the specified weights. The aggregated reward is then
+              normalized at the batch level when forming advantages. This is the suggested approach from the paper
+              [GDPO: Group reward-Decoupled Normalization Policy Optimization for Multi-reward RL
+              Optimization](https://huggingface.co/papers/2601.05242).
         scale_rewards (`str` or `bool`, *optional*, defaults to `"group"`):
             Specifies the scaling strategy for rewards. Supported values are:
 
@@ -264,11 +274,8 @@ class GRPOConfig(TrainingArguments):
         max_num_samplings (`int`, *optional*, defaults to `None`):
             The maximum number of samplings to perform. If `None`, the number of samplings is set to one. Only
             applicable when `use_dynamic_sampling=True`.
-        dynamic_sampling_minimum_standard_deviation (`float`, *optional*, defaults to `0`):
-            The minimum standard deviation targeted in a batch. Only
-            applicable when `use_dynamic_sampling=True`.
-        dynamic_sampling_maximum_standard_deviation (`float`, *optional*, defaults to `0`):
-            The maximum standard deviation cutoff in a batch. Only
+        dynamic_sampling_standard_deviation_quantile (`float`, *optional*, defaults to `0.25`):
+            Standard deviation quantile to mask from the targeted in a batch. Only
             applicable when `use_dynamic_sampling=True`.
         vllm_importance_sampling_correction (`bool`, *optional*, defaults to `True`):
             Whether to apply Importance Sampling (IS) to correct for the mismatch between vLLM completion logprobs and
@@ -337,15 +344,11 @@ class GRPOConfig(TrainingArguments):
         metadata={"help": "Whether to use dynamic sampling."},
     )
 
-    dynamic_sampling_minimum_standard_deviation: Optional[float] = field(
-        default=0,
-        metadata={"help": "Minimum standard deviation targeted in a batch."},
+    dynamic_sampling_standard_deviation_quantile: Optional[float] = field(
+        default=0.25,
+        metadata={"help": "Standard deviation quantile to mask from the targeted in a batch."},
     )
 
-    dynamic_sampling_maximum_standard_deviation: Optional[float] = field(
-        default=0,
-        metadata={"help": "Maximum standard deviation cutoff in a batch."},
-    )
     multi_task_sampling_info: Optional[Union[dict, str]] = field(
         default=None,
         metadata={
@@ -690,6 +693,18 @@ class GRPOConfig(TrainingArguments):
         metadata={
             "help": "Weights for each reward function. Must match the number of reward functions. If `None`, all "
             "rewards are weighted equally with weight `1.0`."
+        },
+    )
+    multi_objective_aggregation: str = field(
+        default="sum_then_normalize",
+        metadata={
+            "help": "Method to aggregate multiple reward functions. Supported values are: "
+            "`'sum_then_normalize'` (default): First sums the weighted rewards from each reward function, then "
+            "applies reward scaling/normalization as specified by `scale_rewards` (see `scale_rewards` for details). "
+            "`'normalize_then_sum'`: First normalizes/scales each reward function across generations (within each "
+            "group), then sums the normalized rewards using the specified weights. The aggregated reward is then "
+            "normalized at the batch level when forming advantages. This is the suggested approach from the paper "
+            "GDPO: Group reward-Decoupled Normalization Policy Optimization for Multi-reward RL Optimization."
         },
     )
     scale_rewards: str = field(

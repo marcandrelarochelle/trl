@@ -470,6 +470,7 @@ class GRPOTrainer(BaseTrainer):
         self.vllm_importance_sampling_cap = args.vllm_importance_sampling_cap
         self.use_liger_kernel = args.use_liger_kernel
         self.loss_type = args.loss_type
+        self.multi_objective_aggregation = args.multi_objective_aggregation
         self.scale_rewards = args.scale_rewards
         self.importance_sampling_level = args.importance_sampling_level
         self.off_policy_mask_threshold = args.off_policy_mask_threshold
@@ -544,8 +545,7 @@ class GRPOTrainer(BaseTrainer):
 
         # Setup dynamic sampling used in DAPO
         self.use_dynamic_sampling = args.use_dynamic_sampling
-        self.dynamic_sampling_minimum_standard_deviation = args.dynamic_sampling_minimum_standard_deviation
-        self.dynamic_sampling_maximum_standard_deviation = args.dynamic_sampling_maximum_standard_deviation
+        self.dynamic_sampling_standard_deviation_quantile = args.dynamic_sampling_standard_deviation_quantile
 
 
         # Reference model
@@ -2028,54 +2028,78 @@ class GRPOTrainer(BaseTrainer):
         # important because rewards will be normalized per group, and completions are distributed. We will later slice
         # rewards_per_func to extract each process's subset.
         rewards_per_func = self._calculate_rewards(inputs, prompts, completions, completion_ids_list)
+        num_generations = self.num_generations if mode == "train" else self.num_generations_eval
 
-        # Apply weights to each reward function's output and sum
-        rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
+        if self.multi_objective_aggregation == "sum_then_normalize":
+            # Apply weights to each reward function's output and sum
+            rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
+            mean_grouped_rewards = rewards.view(-1, num_generations).mean(dim=1)
+            mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(num_generations, dim=0)
+            if self.scale_rewards in ["group", "none"]:
+                # If self.scale_rewards = "none", we'll only use std_rewards to check for zero std for logging
+                if num_generations > 1:
+                    std_rewards = rewards.view(-1, num_generations).std(dim=1)
+                    std_rewards = std_rewards.repeat_interleave(num_generations, dim=0)
+                else:  # doesn't occur during training, but could occur in eval when num_generations_eval=1
+                    std_rewards = torch.zeros_like(rewards)
+            elif self.scale_rewards == "batch":
+                # Compute global std
+                if rewards.numel() > 1:
+                    std_rewards = rewards.std().expand_as(rewards)
+                else:  # doesn't occur during training, but could occur in eval when num_generations_eval=batch_size=1
+                    std_rewards = torch.zeros_like(rewards)
+            else:
+                raise ValueError(
+                    f"Invalid value for scale_rewards: {self.scale_rewards}. Must be one of 'batch', 'group', or 'none'."
+                )
 
+            if self.use_dynamic_sampling:
+                target_standard_deviation = torch.quantile(std_per_reward_funcs, q=self.dynamic_sampling_standard_deviation_quantile)
+                dynamic_sampling_mask = torch.ge(std_rewards, target_standard_deviation)
+
+                rewards = rewards.where(dynamic_sampling_mask, torch.nan)
+
+            mean_grouped_rewards = mean_grouped_rewards.where(dynamic_sampling_mask, torch.nan)
+            std_rewards = std_rewards.where(dynamic_sampling_mask, torch.nan)
+            effective_rewards_per_func = rewards.clone()
+
+            advantages = rewards - mean_grouped_rewards
+            if self.scale_rewards != "none":
+                advantages = advantages / (std_rewards + 1e-4)
+            is_std_zero = torch.isclose(std_rewards, torch.zeros_like(std_rewards))  # for logging
+
+        elif self.multi_objective_aggregation == "normalize_then_sum":
+            grouped = rewards_per_func.view(-1, num_generations, len(self.reward_funcs))
+            mean_k = torch.nanmean(grouped, dim=1, keepdim=True)
+            std_k = nanstd(grouped, dim=1, keepdim=True) if num_generations > 1 else torch.zeros_like(mean_k)
+
+            reward_k = (grouped - mean_k) / (std_k + 1e-4)
+            reward_k = reward_k.view(-1, len(self.reward_funcs))
+            rewards = (reward_k * self.reward_weights.to(device).unsqueeze(0))
+            
+            if self.use_dynamic_sampling:
+                std_per_reward_funcs = std_k.view(-1, len(self.reward_funcs)).repeat_interleave(2, dim=0)
+
+                target_standard_deviation = torch.quantile(std_per_reward_funcs, q=self.dynamic_sampling_standard_deviation_quantile)
+                dynamic_sampling_mask = torch.ge(std_per_reward_funcs, target_standard_deviation)
+                
+                rewards = rewards.where(dynamic_sampling_mask & ~torch.isnan(rewards), torch.nan)
+                effective_rewards_per_func = rewards.clone()
+
+            rewards = rewards.sum(dim=1)
+
+            std_rewards = rewards.std().expand_as(rewards) if rewards.numel() > 1 else torch.zeros_like(rewards)
+            advantages = (rewards - rewards.mean()) / (std_rewards + 1e-4)
+            is_std_zero = torch.isclose(std_rewards, torch.zeros_like(std_rewards))  # for logging
+        else:
+            raise ValueError(
+                f"Invalid multi_objective_aggregation: {self.multi_objective_aggregation}. Must be "
+                "'sum_then_normalize' or 'normalize_then_sum'."
+            )
+            
         if self.dynamic_task_indexer:
             rewards_per_tasks = { task: reward for task, reward in zip(tasks, rewards) }
             self.dynamic_task_indexer.update_rewards(rewards_per_tasks)
-
-        # Compute grouped-wise rewards
-        num_generations = self.num_generations if mode == "train" else self.num_generations_eval
-        mean_grouped_rewards = rewards.view(-1, num_generations).mean(dim=1)
-
-        # Normalize the rewards to compute the advantages
-        mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(num_generations, dim=0)
-        advantages = rewards - mean_grouped_rewards
-
-        if self.scale_rewards in ["group", "none"]:
-            # If self.scale_rewards = "none", we'll still log group level std
-            if num_generations > 1:
-                std_rewards = rewards.view(-1, num_generations).std(dim=1)
-                std_rewards = std_rewards.repeat_interleave(num_generations, dim=0)
-            else:  # this case doesn't occur during training, but could in eval when num_generations_eval=1
-                std_rewards = torch.zeros_like(rewards)
-        elif self.scale_rewards == "batch":
-            # Compute global std
-            if rewards.numel() > 1:
-                std_rewards = rewards.std().expand_as(rewards)
-            else:  # this case doesn't occur during training, but could in eval when num_generations_eval=batch_size=1
-                std_rewards = torch.zeros_like(rewards)
-        else:
-            raise ValueError(
-                f"Invalid value for scale_rewards: {self.scale_rewards}. Must be one of 'batch', 'group', or 'none'."
-            )
-
-        if self.use_dynamic_sampling:
-            target_standard_deviation = max(torch.quantile(std_rewards, q=0.25), self.dynamic_sampling_minimum_standard_deviation)
-            target_standard_deviation = min(target_standard_deviation, self.dynamic_sampling_maximum_standard_deviation)
-            
-            dynamic_sampling_mask = torch.ge(std_rewards, target_standard_deviation)
-            
-            advantages = advantages.where(dynamic_sampling_mask, torch.nan)
-            mean_grouped_rewards = mean_grouped_rewards.where(dynamic_sampling_mask, torch.nan)
-            std_rewards = std_rewards.where(dynamic_sampling_mask, torch.nan)
-
-        is_std_zero = torch.isclose(std_rewards, torch.zeros_like(std_rewards))
-
-        if self.scale_rewards != "none":
-            advantages = advantages / (std_rewards + 1e-4)
 
         # Slice to keep only the local part of the data
         process_slice = slice(
@@ -2088,11 +2112,24 @@ class GRPOTrainer(BaseTrainer):
         # Calculate mean reward per function, but only for samples where the function was applied (non-NaN values)
         for i, reward_func_name in enumerate(self.reward_func_names):
             mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
+            effective_mean_rewards = torch.nanmean(effective_rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
+            self._metrics[mode][f"rewards/{reward_func_name}/effective-mean"].append(effective_mean_rewards)
+
             std_func_rewards = nanstd(rewards_per_func[:, i]).item()
+            effective_std_func_rewards = nanstd(effective_rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_func_rewards)
-        self._metrics[mode]["reward"].append(torch.nanmean(mean_grouped_rewards).item())
-        self._metrics[mode]["reward_std"].append(torch.nanmean(std_rewards).item())
+            self._metrics[mode][f"rewards/{reward_func_name}/effective-std"].append(effective_std_func_rewards)
+
+        rewards = rewards_per_func.nansum(dim=1)
+        effective_rewards = effective_rewards_per_func.nansum(dim=1)
+
+        self._metrics[mode]["reward"].append(torch.nanmean(rewards).item())
+        self._metrics[mode]["reward_std"].append(rewards.std().item())
+
+        self._metrics[mode]["effective-reward"].append(torch.nanmean(effective_rewards).item())
+        self._metrics[mode]["effective-reward_std"].append(effective_rewards.std().item())
+
         self._metrics[mode]["frac_reward_zero_std"].append(is_std_zero.float().mean().item())
 
         # Log prompt and completion texts
@@ -2100,6 +2137,7 @@ class GRPOTrainer(BaseTrainer):
         self._logs["completion"].extend(gather_object(completions_text))
         for i, name in enumerate(self.reward_func_names):
             self._logs["rewards"][name].extend(rewards_per_func[:, i].tolist())
+            self._logs["effective-rewards"][name].extend(effective_rewards_per_func[:, i].tolist())
         self._logs["advantages"].extend(all_process_advantages.tolist())
 
         if images is not None:

@@ -2138,7 +2138,7 @@ class GRPOTrainer(BaseTrainer):
         self._logs["completion"].extend(gather_object(completions_text))
         for i, name in enumerate(self.reward_func_names):
             self._logs["rewards"][name].extend(rewards_per_func[:, i].tolist())
-            self._logs["effective-rewards"][name].extend(effective_rewards_per_func[:, i].tolist())
+            #self._logs["effective-rewards"][name].extend(effective_rewards_per_func[:, i].tolist())
         self._logs["advantages"].extend(all_process_advantages.tolist())
 
         if images is not None:

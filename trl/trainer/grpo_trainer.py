@@ -2081,13 +2081,13 @@ class GRPOTrainer(BaseTrainer):
             if self.use_dynamic_sampling:
                 std_per_reward_funcs = std_k.view(-1, len(self.reward_funcs)).repeat_interleave(2, dim=0)
 
-                target_standard_deviation = torch.quantile(std_per_reward_funcs, q=self.dynamic_sampling_standard_deviation_quantile)
+                target_standard_deviation = torch.quantile(std_per_reward_funcs, q=self.dynamic_sampling_standard_deviation_quantile, dim=0)
                 dynamic_sampling_mask = torch.ge(std_per_reward_funcs, target_standard_deviation)
                 
                 rewards = rewards.where(dynamic_sampling_mask & ~torch.isnan(rewards), torch.nan)
-                effective_rewards_per_func = rewards.clone()
+                effective_rewards_per_func = rewards_per_func.where(dynamic_sampling_mask & ~torch.isnan(rewards), torch.nan)
 
-            rewards = rewards.sum(dim=1)
+            rewards = rewards.nansum(dim=1)
 
             std_rewards = rewards.std().expand_as(rewards) if rewards.numel() > 1 else torch.zeros_like(rewards)
             advantages = (rewards - rewards.mean()) / (std_rewards + 1e-4)
@@ -2113,14 +2113,14 @@ class GRPOTrainer(BaseTrainer):
         # Calculate mean reward per function, but only for samples where the function was applied (non-NaN values)
         for i, reward_func_name in enumerate(self.reward_func_names):
             mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
-            effective_mean_rewards = torch.nanmean(effective_rewards_per_func[:, i]).item()
+            #effective_mean_rewards = torch.nanmean(effective_rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
-            self._metrics[mode][f"rewards/{reward_func_name}/effective_mean"].append(effective_mean_rewards)
+            #self._metrics[mode][f"rewards/{reward_func_name}/effective_mean"].append(effective_mean_rewards)
 
             std_func_rewards = nanstd(rewards_per_func[:, i]).item()
-            effective_std_func_rewards = nanstd(effective_rewards_per_func[:, i]).item()
+            #effective_std_func_rewards = nanstd(effective_rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_func_rewards)
-            self._metrics[mode][f"rewards/{reward_func_name}/effective_std"].append(effective_std_func_rewards)
+            #self._metrics[mode][f"rewards/{reward_func_name}/effective_std"].append(effective_std_func_rewards)
 
         rewards = rewards_per_func.nansum(dim=1)
         effective_rewards = effective_rewards_per_func.nansum(dim=1)
@@ -2129,7 +2129,7 @@ class GRPOTrainer(BaseTrainer):
         self._metrics[mode]["reward_std"].append(rewards.std().item())
 
         self._metrics[mode]["effective_reward_mean"].append(torch.nanmean(effective_rewards).item())
-        self._metrics[mode]["effective_reward_std"].append(effective_rewards.std().item())
+        self._metrics[mode]["effective_reward_std"].append(nanstd(effective_rewards).item())
 
         self._metrics[mode]["frac_reward_zero_std"].append(is_std_zero.float().mean().item())
 

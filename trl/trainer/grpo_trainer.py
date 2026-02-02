@@ -2123,15 +2123,17 @@ class GRPOTrainer(BaseTrainer):
             #self._metrics[mode][f"rewards/{reward_func_name}/effective_std"].append(effective_std_func_rewards)
 
         rewards = rewards_per_func.nansum(dim=1)
-        effective_rewards = effective_rewards_per_func.nansum(dim=1)
 
         self._metrics[mode]["reward"].append(torch.nanmean(rewards).item())
         self._metrics[mode]["reward_std"].append(rewards.std().item())
 
-        self._metrics[mode]["effective_reward_mean"].append(torch.nanmean(effective_rewards).item())
-        self._metrics[mode]["effective_reward_std"].append(nanstd(effective_rewards).item())
-
         self._metrics[mode]["frac_reward_zero_std"].append(is_std_zero.float().mean().item())
+
+        if self.use_dynamic_sampling:
+            effective_rewards = effective_rewards_per_func.nansum(dim=1)
+        
+            self._metrics[mode]["effective_reward_mean"].append(torch.nanmean(effective_rewards).item())
+            self._metrics[mode]["effective_reward_std"].append(nanstd(effective_rewards).item())
 
         # Log prompt and completion texts
         self._logs["prompt"].extend(gather_object(prompts_text))

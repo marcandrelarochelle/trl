@@ -270,13 +270,7 @@ class GRPOConfig(TrainingArguments):
 
             </Deprecated>
         use_dynamic_sampling (`bool`, *optional*, defaults to `False`):
-            Whether to use dynamic sampling. See the [DAPO paper](https://huggingface.co/papers/2503.14476) for more.
-        max_num_samplings (`int`, *optional*, defaults to `None`):
-            The maximum number of samplings to perform. If `None`, the number of samplings is set to one. Only
-            applicable when `use_dynamic_sampling=True`.
-        dynamic_sampling_standard_deviation_quantile (`float`, *optional*, defaults to `0.25`):
-            Standard deviation quantile to mask from the targeted in a batch. Only
-            applicable when `use_dynamic_sampling=True`.
+            Whether to use dynamic sampling.
         vllm_importance_sampling_correction (`bool`, *optional*, defaults to `True`):
             Whether to apply Importance Sampling (IS) to correct for the mismatch between vLLM completion logprobs and
             recomputed training logprobs. If set to `False`, no IS is applied regardless of
@@ -342,11 +336,6 @@ class GRPOConfig(TrainingArguments):
     use_dynamic_sampling: bool = field(
         default=False,
         metadata={"help": "Whether to use dynamic sampling."},
-    )
-
-    dynamic_sampling_standard_deviation_quantile: Optional[float] = field(
-        default=0.25,
-        metadata={"help": "Standard deviation quantile to mask from the targeted in a batch."},
     )
 
     multi_task_sampling_info: Optional[Union[dict, str]] = field(

@@ -546,8 +546,6 @@ class GRPOTrainer(BaseTrainer):
 
         # Setup dynamic sampling used in DAPO
         self.use_dynamic_sampling = args.use_dynamic_sampling
-        self.dynamic_sampling_standard_deviation_quantile = args.dynamic_sampling_standard_deviation_quantile
-
 
         # Reference model
         self.beta = args.beta

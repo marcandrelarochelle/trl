@@ -2055,11 +2055,15 @@ class GRPOTrainer(BaseTrainer):
                 )
 
             if self.use_dynamic_sampling:
-                log_std_per_rewards = torch.log(std_rewards)
-                mininimum_std = log_std_per_rewards.amin(dim=0).expand_as(rewards)
-                normalization = ((log_std_per_rewards - mininimum_std) / (log_std_per_rewards.amax(dim=0).expand_as(rewards) - mininimum_std)) + 1e-4
+                log_std_per_rewards = torch.log(std_per_reward_funcs)
+                masked_inf_tensor = torch.masked.masked_tensor(log_std_per_rewards, ~torch.isinf(log_std_per_rewards))
 
-                rewards * normalization
+                mininimum_std_per_rewards = masked_inf_tensor.amin(dim=0).to_tensor(torch.nan).expand_as(rewards)
+                maximum_std_per_rewards = masked_inf_tensor.amax(dim=0).to_tensor(torch.nan).expand_as(rewards)
+
+                normalization = ((log_std_per_rewards - mininimum_std_per_rewards) / (maximum_std_per_rewards - mininimum_std_per_rewards)) * (1 - 0.2) + 0.2
+
+                rewards * torch.nan_to_num(normalization, 1)
 
             advantages = rewards - mean_grouped_rewards
             if self.scale_rewards != "none":
@@ -2079,9 +2083,14 @@ class GRPOTrainer(BaseTrainer):
                 std_per_reward_funcs = std_k.view(-1, len(self.reward_funcs)).repeat_interleave(2, dim=0)
 
                 log_std_per_rewards = torch.log(std_per_reward_funcs)
-                mininimum_std_per_rewards = log_std_per_rewards.amin(dim=0).expand_as(rewards)
-                normalization = ((log_std_per_rewards - mininimum_std_per_rewards) / (log_std_per_rewards.amax(dim=0).expand_as(rewards) - mininimum_std_per_rewards)) + 1e-4
-                rewards = rewards * normalization
+                masked_inf_tensor = torch.masked.masked_tensor(log_std_per_rewards, ~torch.isinf(log_std_per_rewards))
+                
+                mininimum_std_per_rewards = masked_inf_tensor.amin(dim=0).to_tensor(torch.nan).expand_as(rewards)
+                maximum_std_per_rewards = masked_inf_tensor.amax(dim=0).to_tensor(torch.nan).expand_as(rewards)
+                
+                normalization = ((log_std_per_rewards - mininimum_std_per_rewards) / (maximum_std_per_rewards - mininimum_std_per_rewards)) * (1 - 0.2) + 0.2
+                
+                rewards = rewards * torch.nan_to_num(normalization, 1)
 
             rewards = rewards.nansum(dim=1)
 

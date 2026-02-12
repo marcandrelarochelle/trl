@@ -2078,7 +2078,7 @@ class GRPOTrainer(BaseTrainer):
             rewards = (reward_k * self.reward_weights.to(device).unsqueeze(0))
             
             if self.use_dynamic_sampling:
-                std_per_reward_funcs = std_k.view(-1, len(self.reward_funcs)).repeat_interleave(2, dim=0)
+                std_per_reward_funcs = std_k.view(-1, len(self.reward_funcs)).repeat_interleave(num_generations, dim=0)
 
                 log_std_per_rewards = torch.log(std_per_reward_funcs)
                 masked_inf_tensor = torch.masked.masked_tensor(log_std_per_rewards, ~torch.isinf(log_std_per_rewards))

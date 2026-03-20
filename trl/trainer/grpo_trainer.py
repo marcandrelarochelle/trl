@@ -1226,7 +1226,7 @@ class GRPOTrainer(BaseTrainer):
                 value (`float`):
                     Scalar value for this batch.
             """
-            self._pending_metrics[name].append(value)
+            self._metrics["train"][name].append(value)
 
     @profiling_decorator
     def _calculate_rewards(self, inputs, prompts, completions, completion_ids_list):

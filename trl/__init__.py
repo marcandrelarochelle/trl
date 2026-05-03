@@ -17,7 +17,7 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
 from . import _compat
-from .import_utils import _LazyModule
+from ._lazy_module import _LazyModule
 
 
 try:
@@ -26,7 +26,12 @@ except PackageNotFoundError:
     __version__ = "unknown"
 
 _import_structure = {
-    "chat_template_utils": ["add_response_schema", "clone_chat_template", "get_training_chat_template"],
+    "chat_template_utils": [
+        "add_response_schema",
+        "clone_chat_template",
+        "get_training_chat_template",
+        "supports_tool_calling",
+    ],
     "data_utils": [
         "apply_chat_template",
         "extract_prompt",
@@ -39,52 +44,20 @@ _import_structure = {
         "pack_dataset",
         "prepare_multimodal_messages",
         "prepare_multimodal_messages_vllm",
-        "truncate_dataset",
         "unpair_preference_dataset",
     ],
-    "models": [
-        "AutoModelForCausalLMWithValueHead",  # deprecated import
-        "AutoModelForSeq2SeqLMWithValueHead",  # deprecated import
-        "PreTrainedModelWrapper",  # deprecated import
-        "create_reference_model",
-    ],
+    "models": ["create_reference_model"],
     "scripts": ["DatasetMixtureConfig", "ScriptArguments", "TrlParser", "get_dataset", "init_zero_verbose"],
     "trainer": [
-        "AllTrueJudge",  # deprecated import
-        "BaseBinaryJudge",  # deprecated import
-        "BaseJudge",  # deprecated import
-        "BasePairwiseJudge",  # deprecated import
-        "BaseRankJudge",  # deprecated import
-        "BCOConfig",  # deprecated import
-        "BCOTrainer",  # deprecated import
         "BEMACallback",
-        "CPOConfig",  # deprecated import
-        "CPOTrainer",  # deprecated import
         "DPOConfig",
         "DPOTrainer",
-        "FDivergenceConstants",
-        "FDivergenceType",
-        "GKDConfig",  # deprecated import
-        "GKDTrainer",  # deprecated import
         "GRPOConfig",
         "GRPOTrainer",
-        "HfPairwiseJudge",  # deprecated import
         "KTOConfig",
         "KTOTrainer",
         "LogCompletionsCallback",
         "ModelConfig",
-        "NashMDConfig",  # deprecated import
-        "NashMDTrainer",  # deprecated import
-        "OnlineDPOConfig",  # deprecated import
-        "OnlineDPOTrainer",  # deprecated import
-        "OpenAIPairwiseJudge",  # deprecated import
-        "ORPOConfig",  # deprecated import
-        "ORPOTrainer",  # deprecated import
-        "PairRMJudge",  # deprecated import
-        "PPOConfig",  # deprecated import
-        "PPOTrainer",  # deprecated import
-        "PRMConfig",  # deprecated import
-        "PRMTrainer",  # deprecated import
         "RewardConfig",
         "RewardTrainer",
         "RichProgressCallback",
@@ -94,9 +67,6 @@ _import_structure = {
         "SFTTrainer",
         "SyncRefModelCallback",
         "WeaveCallback",
-        "WinRateCallback",  # deprecated import
-        "XPOConfig",  # deprecated import
-        "XPOTrainer",  # deprecated import
         "get_kbit_device_map",
         "get_peft_config",
         "get_quantization_config",
@@ -104,7 +74,12 @@ _import_structure = {
 }
 
 if TYPE_CHECKING:
-    from .chat_template_utils import add_response_schema, clone_chat_template, get_training_chat_template
+    from .chat_template_utils import (
+        add_response_schema,
+        clone_chat_template,
+        get_training_chat_template,
+        supports_tool_calling,
+    )
     from .data_utils import (
         apply_chat_template,
         extract_prompt,
@@ -117,52 +92,20 @@ if TYPE_CHECKING:
         pack_dataset,
         prepare_multimodal_messages,
         prepare_multimodal_messages_vllm,
-        truncate_dataset,
         unpair_preference_dataset,
     )
-    from .models import (
-        AutoModelForCausalLMWithValueHead,  # deprecated import
-        AutoModelForSeq2SeqLMWithValueHead,  # deprecated import
-        PreTrainedModelWrapper,  # deprecated import
-        create_reference_model,
-    )
+    from .models import create_reference_model
     from .scripts import DatasetMixtureConfig, ScriptArguments, TrlParser, get_dataset, init_zero_verbose
     from .trainer import (
-        AllTrueJudge,  # deprecated import
-        BaseBinaryJudge,  # deprecated import
-        BaseJudge,  # deprecated import
-        BasePairwiseJudge,  # deprecated import
-        BaseRankJudge,  # deprecated import
-        BCOConfig,  # deprecated import
-        BCOTrainer,  # deprecated import
         BEMACallback,
-        CPOConfig,  # deprecated import
-        CPOTrainer,  # deprecated import
         DPOConfig,
         DPOTrainer,
-        FDivergenceConstants,
-        FDivergenceType,
-        GKDConfig,  # deprecated import
-        GKDTrainer,  # deprecated import
         GRPOConfig,
         GRPOTrainer,
-        HfPairwiseJudge,  # deprecated import
         KTOConfig,
         KTOTrainer,
         LogCompletionsCallback,
         ModelConfig,
-        NashMDConfig,  # deprecated import
-        NashMDTrainer,  # deprecated import
-        OnlineDPOConfig,  # deprecated import
-        OnlineDPOTrainer,  # deprecated import
-        OpenAIPairwiseJudge,  # deprecated import
-        ORPOConfig,  # deprecated import
-        ORPOTrainer,  # deprecated import
-        PairRMJudge,  # deprecated import
-        PPOConfig,  # deprecated import
-        PPOTrainer,  # deprecated import
-        PRMConfig,  # deprecated import
-        PRMTrainer,  # deprecated import
         RewardConfig,
         RewardTrainer,
         RichProgressCallback,
@@ -172,9 +115,6 @@ if TYPE_CHECKING:
         SFTTrainer,
         SyncRefModelCallback,
         WeaveCallback,
-        WinRateCallback,  # deprecated import
-        XPOConfig,  # deprecated import
-        XPOTrainer,  # deprecated import
         get_kbit_device_map,
         get_peft_config,
         get_quantization_config,

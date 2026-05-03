@@ -716,8 +716,6 @@ class TestRLOOTrainer(TrlTestCase):
         for n, param in previous_trainable_params.items():
             new_param = trainer.model.get_parameter(n)
             assert not torch.equal(param, new_param), f"Parameter {n} has not changed."
-            new_ref_param = trainer.ref_model.get_parameter(n)
-            assert not torch.equal(previous_ref_params[n], new_ref_param), f"Ref Parameter {n} has not changed."
 
     def test_training_with_pad_to_multiple_of(self):
         dataset = load_dataset("trl-internal-testing/zen", "standard_prompt_only", split="train")

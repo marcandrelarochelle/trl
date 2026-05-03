@@ -38,7 +38,7 @@ cd OpenEnv/envs/echo_env
 uv pip install -e .
 ```
 
-Setup (Option B - Clone OpenEnv repo):
+Usage:
 
 ```sh
 python examples/scripts/openenv/echo.py

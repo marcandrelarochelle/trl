@@ -45,23 +45,6 @@ python examples/scripts/openenv/browsergym.py --use-vllm
 CUDA_VISIBLE_DEVICES=0 trl vllm-serve --model Qwen/Qwen3.5-2B --host 0.0.0.0 --port 8000
 CUDA_VISIBLE_DEVICES=1 python examples/scripts/openenv/browsergym.py --use-vllm --vllm-mode server
 ```
-
-# Option 3: Local + Colocated vLLM (1 GPU required)
-
-# Build and start the environment only if using --env-mode docker-local
-```sh
-cd OpenEnv
-docker build -t openenv-base:latest -f src/core/containers/images/Dockerfile .
-docker build -t browsergym-env:latest -f src/envs/browsergym_env/server/Dockerfile .
-docker run -d -p 8001:8001 \
-  -e BROWSERGYM_BENCHMARK="miniwob" \
-  -e BROWSERGYM_TASK_NAME="click-test" \
-  browsergym-env:latest
-```
-
-```sh
-python examples/scripts/openenv/browsergym.py --env-mode docker-local --vllm-mode colocate
-```
 """
 
 from __future__ import annotations

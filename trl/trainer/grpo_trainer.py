@@ -1169,31 +1169,6 @@ class GRPOTrainer(_BaseTrainer):
             # local generation batch == local eval batch
             inputs = self._generate_and_score_completions(generation_batch)
         return inputs
- 
-    def _log_completion_extra(self, column: str, values: list):
-        """
-        Log extra columns to the completions table. Called from reward functions via the `log_extra` kwarg.
-
-        Args:
-            column (`str`):
-                Name of the column to add.
-            values (`list`):
-                Values for the column, one per sample in the batch.
-        """
-        self._pending_extra_logs[column].extend(values)
-
-    def _log_metric(self, name: str, value: float):
-        """
-        Log a scalar metric from a reward function. Called via the `log_metric` kwarg. Values are averaged over each
-        logging step and reported alongside built-in metrics like `kl` and `entropy`.
-
-        Args:
-            name (`str`):
-                Name of the metric.
-            value (`float`):
-                Scalar value for this batch.
-        """
-        self._pending_metrics[name].append(value)
 
     def _log_completion_extra(self, column: str, values: list):
         """

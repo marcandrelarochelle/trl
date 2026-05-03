@@ -1935,9 +1935,6 @@ class GRPOTrainer(_BaseTrainer):
 
         # Concatenate prompt_mask with completion_mask for logit computation
         prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)  # (B, P+C)
-
-        # attend to all non-padding tokens, but mask out user/tool result tokens in loss
-        completion_attention_mask = (completion_ids != self.pad_token_id).long()
         attention_mask = torch.cat([prompt_mask, completion_attention_mask], dim=1)  # (B, P+C)
 
         logits_to_keep = completion_ids.size(1)  # we only need to compute the logits for the completion tokens

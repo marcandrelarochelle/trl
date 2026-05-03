@@ -1827,6 +1827,9 @@ class GRPOTrainer(_BaseTrainer):
 
         prompts = [x["prompt"] for x in inputs]
 
+        if "task" in inputs[0]:
+            tasks = [x["task"] for x in inputs]
+
         if self.environments:
             for prompt, environment, reset_kwargs in zip(prompts, self.environments, inputs, strict=True):
                 observation = environment.reset(**reset_kwargs)
@@ -2168,28 +2171,6 @@ class GRPOTrainer(_BaseTrainer):
                 raise ValueError(
                     f"Invalid value for scale_rewards: {self.scale_rewards}. Must be one of 'batch', 'group', or 'none'."
                 )
-        if self.multi_objective_aggregation == "sum_then_normalize":
-            # Apply weights to each reward function's output and sum
-            rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
-            mean_grouped_rewards = rewards.view(-1, num_generations).mean(dim=1)
-            mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(num_generations, dim=0)
-            if self.scale_rewards in ["group", "none"]:
-                # If self.scale_rewards = "none", we'll only use std_rewards to check for zero std for logging
-                if num_generations > 1:
-                    std_rewards = rewards.view(-1, num_generations).std(dim=1)
-                    std_rewards = std_rewards.repeat_interleave(num_generations, dim=0)
-                else:  # doesn't occur during training, but could occur in eval when num_generations_eval=1
-                    std_rewards = torch.zeros_like(rewards)
-            elif self.scale_rewards == "batch":
-                # Compute global std
-                if rewards.numel() > 1:
-                    std_rewards = rewards.std().expand_as(rewards)
-                else:  # doesn't occur during training, but could occur in eval when num_generations_eval=batch_size=1
-                    std_rewards = torch.zeros_like(rewards)
-            else:
-                raise ValueError(
-                    f"Invalid value for scale_rewards: {self.scale_rewards}. Must be one of 'batch', 'group', or 'none'."
-                )
 
             if self.use_dynamic_sampling:
                 log_std_per_rewards = torch.log(std_per_reward_funcs)
@@ -2200,7 +2181,7 @@ class GRPOTrainer(_BaseTrainer):
 
                 normalization = ((log_std_per_rewards - mininimum_std_per_rewards) / (maximum_std_per_rewards - mininimum_std_per_rewards)) * (1 - 0.2) + 0.2
 
-                rewards * torch.nan_to_num(normalization, 1)
+                rewards *= torch.nan_to_num(normalization, 1)
 
             advantages = rewards - mean_grouped_rewards
             if self.scale_rewards != "none":

@@ -647,8 +647,12 @@ class GRPOTrainer(_BaseTrainer):
             compute_loss_func="non-None value to disable scaling",
         )
 
-        # Setup dynamic sampling used in DAPO
         self.use_dynamic_sampling = args.use_dynamic_sampling
+        self.use_multi_stage_loss = args.use_multi_stage_loss
+
+        if self.use_multi_stage_loss:
+            self.start_stage_marker = args.start_stage_marker
+            self.end_stage_marker = args.end_stage_marker
 
         # Reference model
         self.beta = args.beta
@@ -2475,6 +2479,46 @@ class GRPOTrainer(_BaseTrainer):
 
         return phi_seq  # (B, 1)
 
+    def _create_mask_between_markers(completion_ids, start_id, end_id):
+        """
+        completion_ids: [B, T] tensor of ids
+        Returns:
+            mask: [B, T] bool tensor, True between start_id and end_id inclusive
+        """
+        if completion_ids.dim() != 2:
+            raise ValueError(f"Expected completion_ids with shape [B, T], got {tuple(completion_ids.shape)}")
+    
+        B, T = completion_ids.shape
+        device = completion_ids.device
+        positions = torch.arange(T, device=device).unsqueeze(0).expand(B, T)
+    
+        start_match = completion_ids.eq(start_id)
+        end_match = completion_ids.eq(end_id)
+    
+        has_start = start_match.any(dim=1)
+        has_end = end_match.any(dim=1)
+    
+        start_pos = torch.where(
+            has_start,
+            start_match.float().argmax(dim=1),
+            torch.full((B,), T, device=device, dtype=torch.long),
+        )
+        end_pos = torch.where(
+            has_end,
+            end_match.float().argmax(dim=1),
+            torch.full((B,), -1, device=device, dtype=torch.long),
+        )
+    
+        valid = has_start & has_end & (start_pos <= end_pos)
+    
+        mask = (
+            (positions >= start_pos.unsqueeze(1)) &
+            (positions <= end_pos.unsqueeze(1)) &
+            valid.unsqueeze(1)
+        )
+    
+        return mask
+
     def _compute_loss(self, model, inputs):
         # Compute the per-token log probabilities for the model
         prompt_ids, prompt_mask = inputs["prompt_ids"], inputs["prompt_mask"]
@@ -2605,28 +2649,41 @@ class GRPOTrainer(_BaseTrainer):
             per_token_loss = per_token_loss + self.beta * per_token_kl
 
         mode = "train" if self.model.training else "eval"
-        if self.loss_type in ["grpo", "sapo"]:
-            loss = ((per_token_loss * mask).sum(-1) / mask.sum(-1).clamp(min=1.0)).mean()
-            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0  # no accum in eval
-            loss = loss / normalizer
-        elif self.loss_type == "bnpo":
-            loss = (per_token_loss * mask).sum() / mask.sum().clamp(min=1.0)
-            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0  # no accum in eval
-            loss = loss / normalizer
-        elif self.loss_type == "dr_grpo":
-            loss = (per_token_loss * mask).sum() / (per_token_loss.size(0) * self.max_completion_length)
-            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0  # no accum in eval
-            loss = loss / normalizer
-        elif self.loss_type in ["cispo", "dapo", "vespo"]:
-            normalizer = inputs["num_items_in_batch"] / self.accelerator.num_processes
-            loss = (per_token_loss * mask).sum() / normalizer
-        elif self.loss_type == "luspo":
-            # Unless importance_sampling_level="token" (not recommended here), per_token_loss is expected to be (B, 1)
-            loss = (per_token_loss * mask.sum(1, keepdim=True)).mean()
-            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0
-            loss = loss / normalizer
+        loss = 0
+
+        if self.use_multi_stage_loss:
+            stage_mask = self._create_mask_between_markers(completion_ids)
+            multi_stage_mask = [stage_mask, ~stage_mask]
         else:
-            raise ValueError(f"Unknown loss type: {self.loss_type}")
+            multi_stage_mask = [1.0]
+
+        for stage_mask in multi_stage_mask:
+            per_token_stage_loss = per_token_loss * stage_mask
+            
+            if self.loss_type in ["grpo", "sapo"]:
+                intermediate_loss = ((per_token_stage_loss * mask).sum(-1) / mask.sum(-1).clamp(min=1.0)).mean()
+                normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0  # no accum in eval
+                intermediate_loss = intermediate_loss / normalizer
+            elif self.loss_type == "bnpo":
+                intermediate_loss = (per_token_stage_loss * mask).sum() / mask.sum().clamp(min=1.0)
+                normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0  # no accum in eval
+                intermediate_loss = intermediate_loss / normalizer
+            elif self.loss_type == "dr_grpo":
+                intermediate_loss = (per_token_stage_loss * mask).sum() / (per_token_stage_loss.size(0) * self.max_completion_length)
+                normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0  # no accum in eval
+                intermediate_loss = intermediate_loss / normalizer
+            elif self.loss_type in ["cispo", "dapo", "vespo"]:
+                normalizer = inputs["num_items_in_batch"] / self.accelerator.num_processes
+                intermediate_loss = (per_token_stage_loss * mask).sum() / normalizer
+            elif self.loss_type == "luspo":
+                # Unless importance_sampling_level="token" (not recommended here), per_token_stage_loss is expected to be (B, 1)
+                intermediate_loss = (per_token_stage_loss * mask.sum(1, keepdim=True)).mean()
+                normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0
+                intermediate_loss = intermediate_loss / normalizer
+            else:
+                raise ValueError(f"Unknown loss type: {self.loss_type}")
+
+            loss += intermediate_loss
 
         # Log the metrics
         completion_token_count = mask.sum().clamp(min=1.0)

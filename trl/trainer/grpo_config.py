@@ -349,7 +349,22 @@ class GRPOConfig(_BaseConfig):
 
     use_dynamic_sampling: bool = field(
         default=False,
-        metadata={"help": "Whether to use dynamic sampling."},
+        metadata={"help": "Whether to use dynamic sampling or not."},
+    )
+
+    use_multi_stage_loss: bool = field(
+        default=False,
+        metadata={"help": "Whether to use multi-stage loss or not."},
+    )
+
+    start_stage_marker: int = field(
+        default=None,
+        metadata={"help": "Marker for the start of the first stage of multi-stage loss"},
+    )
+
+    end_stage_marker: int = field(
+        default=None,
+        metadata={"help": "Marker for the end of the first stage of multi-stage loss"},
     )
 
     multi_task_sampling_info: Optional[Union[dict, str]] = field(
@@ -903,6 +918,11 @@ class GRPOConfig(_BaseConfig):
             raise ValueError(
                 "log_completions_hub_repo is set, but log_completions is False. Enable log_completions to upload "
                 "completions to the Hub, or unset log_completions_hub_repo."
+            )
+
+        if self.use_multi_stage_loss and self.start_stage_marker is None or self.end_stage_marker is None:
+            raise ValueError(
+                "Start and end markers for multi-stage loss must be defined when multi-stage loss is enabled"
             )
 
         num_processes = self.world_size

@@ -2479,7 +2479,7 @@ class GRPOTrainer(_BaseTrainer):
 
         return phi_seq  # (B, 1)
 
-    def _create_mask_between_markers(completion_ids, start_id, end_id):
+    def create_mask_between_markers(completion_ids, start_id, end_id):
         """
         completion_ids: [B, T] tensor of ids
         Returns:

@@ -748,7 +748,6 @@ class RepeatSampler(Sampler):
         repeat_count: int = 1,
         shuffle: bool = True,
         seed: int | None = None,
-        dynamic_task_indexer: Optional[DynamicTaskIndexer] = None,
     ):
         self.data_source = data_source
         self.mini_repeat_count = mini_repeat_count
@@ -757,7 +756,6 @@ class RepeatSampler(Sampler):
         self.num_samples = len(data_source)
         self.shuffle = shuffle
         self.seed = seed
-        self.dynamic_task_indexer = dynamic_task_indexer
 
         if shuffle:
             self.generator = torch.Generator()  # Create a local random generator
@@ -771,16 +769,13 @@ class RepeatSampler(Sampler):
         else:
             indexes = list(range(self.num_samples))
 
-        if not self.dynamic_task_indexer:
-            #    [2, 4, 3, 1, 0, 6, 5]
-            # -> [[2, 4, 3], [1, 0, 6], [5]]  (batch_size = 3)
-            indexes = [indexes[i : i + self.batch_size] for i in range(0, len(indexes), self.batch_size)]
-        else:
-            indexes = self.dynamic_task_indexer.get_indexes_generator(indexes)
+        #    [2, 4, 3, 1, 0, 6, 5]
+        # -> [[2, 4, 3], [1, 0, 6], [5]]  (batch_size = 3)
+        indexes = [indexes[i : i + self.batch_size] for i in range(0, len(indexes), self.batch_size)]
 
         #    [[2, 4, 3], [1, 0, 6], [5]]
         # -> [[2, 4, 3], [1, 0, 6]]
-        indexes = (chunk for chunk in indexes if len(chunk) == self.batch_size)
+        indexes = [chunk for chunk in indexes if len(chunk) == self.batch_size]
 
         for chunk in indexes:
             for _ in range(self.repeat_count):

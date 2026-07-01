@@ -931,29 +931,14 @@ class GRPOTrainer(_BaseTrainer):
 
         batch_size = self.args.generation_batch_size // self.num_generations
 
-        if self.args.multi_task_sampling_info:
-            self.dynamic_task_indexer = DynamicTaskIndexer(self.args.multi_task_sampling_info, int(batch_size, batch_size * 1.5), self.args.seed)
-            
-            return RepeatSampler(
-                data_source=dataset,
-                mini_repeat_count=self.num_generations,
-                batch_size=batch_size,
-                repeat_count=self.num_iterations * self.args.steps_per_generation,
-                shuffle=self.shuffle_dataset,
-                seed=self.args.seed,
-                dynamic_task_indexer=self.dynamic_task_indexer,
-            )
-        else:
-            self.dynamic_task_indexer = None
-            
-            return RepeatSampler(
-                data_source=dataset,
-                mini_repeat_count=self.num_generations,
-                batch_size=batch_size,
-                repeat_count=self.num_iterations * self.args.steps_per_generation,
-                shuffle=self.shuffle_dataset,
-                seed=self.args.seed,
-            )
+        return RepeatSampler(
+            data_source=dataset,
+            mini_repeat_count=self.num_generations,
+            batch_size=self.args.generation_batch_size // self.num_generations,
+            repeat_count=self.num_iterations * self.args.steps_per_generation,
+            shuffle=self.shuffle_dataset,
+            seed=self.args.seed,
+        )
 
     def _get_eval_sampler(self, eval_dataset) -> Sampler:
         # See _get_train_sampler for an explanation of the sampler.
@@ -1831,9 +1816,6 @@ class GRPOTrainer(_BaseTrainer):
 
         prompts = [x["prompt"] for x in inputs]
 
-        if "task" in inputs[0]:
-            tasks = [x["task"] for x in inputs]
-
         if self.environments:
             for prompt, environment, reset_kwargs in zip(prompts, self.environments, inputs, strict=True):
                 observation = environment.reset(**reset_kwargs)
@@ -2221,10 +2203,6 @@ class GRPOTrainer(_BaseTrainer):
                 f"Invalid multi_objective_aggregation: {self.multi_objective_aggregation}. Must be "
                 "'sum_then_normalize' or 'normalize_then_sum'."
             )
-            
-        if self.dynamic_task_indexer:
-            rewards_per_tasks = { task: reward for task, reward in zip(tasks, rewards) }
-            self.dynamic_task_indexer.update_rewards(rewards_per_tasks)
 
         # Slice to keep only the local part of the data
         process_slice = slice(

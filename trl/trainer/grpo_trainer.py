@@ -73,7 +73,6 @@ from .base_trainer import _BaseTrainer
 from .callbacks import SyncRefModelCallback
 from .grpo_config import GRPOConfig
 from .utils import (
-    DynamicTaskIndexer,
     RepeatSampler,
     create_model_from_path,
     disable_dropout_in_model,

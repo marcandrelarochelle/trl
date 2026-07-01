@@ -653,48 +653,6 @@ def print_prompt_completions_sample(
     console.print(panel)
 
 
-class DynamicTaskIndexer:
-    def __init__(self, dataset_info, batch_size: int = 1, maximum_rewards_per_task: int = 10, seed: Optional[int] = None):
-        self.batch_size = batch_size
-        self.maximum_rewards_per_task = maximum_rewards_per_task
-        self.previous_rewards_per_task = { task: [] for task in dataset_info.keys() }
-
-        self.dataset_indexes = { task: { 'length': info['length'], 'offset': info['offset'], 'current_index': 0 } for task, info in dataset_info.items() }
-
-        if seed is not None:
-            self.generator = np.random.default_rng(seed=seed)
-    
-    def get_indexes_generator(self, indexes: List[int]):
-        accumulator = []
-        
-        for index in indexes:
-            remainder = self.batch_size % index
-            
-            if remainder == 0:
-                std_per_task = { task: nanstd(rewards) for rewards in self.previous_rewards_per_task.values() }
-                magnitude = np.linalg.norm(std_per_task.values())
-        
-                for task, std in std_per_task.items():
-                    std_per_task[task] = std / magnitude if magnitude != 0 else 1 / len(std_per_task)
-
-                dataset_choices = self.generator.choice(len(self.dataset_indexes), self.batch_size, p=std_per_task[task].values())
-
-            index_info = self.dataset_indexes[dataset_choices[remainder]]
-            accumulator.append((index_info['current_index'] + index_info['offset']) % index_info['length'])
-            index_info['current_index'] += 1
-
-            if len(accumulator) == self.batch_size:
-                yield accumulator
-                accumulator.clear()
-
-    def update_rewards(self, rewards_per_task):
-        for task, reward in rewards_per_task.items():
-            if len(self.previous_rewards_per_task[task]) + 1 > self.maximum_rewards_per_task:
-                self.previous_rewards_per_task[task].pop(0)
-
-            self.previous_rewards_per_task[task].append(reward)
-                
-
 class RepeatSampler(Sampler):
     """
     Sampler that repeats the indices of a dataset in a structured manner.

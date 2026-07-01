@@ -13,6 +13,14 @@ Jinja2 chat templates stored here serve two purposes:
 
 Used for identity comparison only.
 
+### `cohere.jinja`
+
+Original Cohere Command chat template (as shipped by `CohereForAI/c4ai-command-r-v01` and related checkpoints).
+
+### `cohere2.jinja`
+
+Original Cohere2 chat template (as shipped by `CohereLabs/c4ai-command-r7b-12-2024` and related checkpoints).
+
 ### `deepseekv3.jinja`
 
 Original DeepSeek-V3 chat template.
@@ -20,6 +28,10 @@ Original DeepSeek-V3 chat template.
 ### `gemma.jinja`
 
 Original Gemma chat template. Used by both Gemma (v1) and Gemma2, which ship identical templates.
+
+### `gemma3.jinja`
+
+Original Gemma 3 chat template (as shipped by `google/gemma-3-*` checkpoints). Unlike `gemma.jinja`, this template supports system messages and renders multimodal `content` blocks (text and image) for VLM training.
 
 ### `glm4moe.jinja`
 
@@ -29,6 +41,10 @@ Original GLM-4-MoE chat template.
 
 Original GPT-OSS chat template.
 
+### `idefics3.jinja`
+
+Original Idefics3 chat template (as shipped by `HuggingFaceM4/Idefics3-8B-Llama3`). Does not support tool calling.
+
 ### `llama3.jinja`
 
 Original Llama 3 chat template.
@@ -37,9 +53,37 @@ Original Llama 3 chat template.
 
 Original Llama 3.1 / 3.2 chat templates. Both render tool calls as a single bare JSON object using the key `parameters` (instead of `arguments`) and support at most one tool call per assistant turn.
 
+### `llava_next.jinja`
+
+Original Llava-Next chat template (as shipped by `llava-hf/llava-v1.6-mistral-7b-hf`). Renders multimodal `content` blocks in the LLaVA / Mistral `[INST] ... [/INST]` format. Does not support tool calling.
+
+### `nemotron_3_nano.jinja`
+
+Original Nemotron Nano chat template (as shipped by `nvidia/NVIDIA-Nemotron-3-Nano-*` checkpoints). Renders tool calls in the same Hermes-style `<function=...>` / `<parameter=...>` format as Qwen3.5, so it reuses `qwen3_5_schema` for response parsing.
+
+### `nemotron_3_super.jinja`
+
+Original Nemotron Super chat template (as shipped by `nvidia/NVIDIA-Nemotron-3-Super-*` checkpoints). Same as `nemotron_3_nano.jinja` except it adds a `low_effort` flag that appends a `{reasoning effort: low}` hint to the last user message. Tool calls use the same Hermes-style format, so it also reuses `qwen3_5_schema` for response parsing.
+
+### `nemotron_3_ultra.jinja`
+
+Original Nemotron Ultra chat template (as shipped by `nvidia/NVIDIA-Nemotron-3-Ultra-*` checkpoints). Same as `nemotron_3_nano.jinja` except it adds a `medium_effort` flag that appends a `{reasoning effort: efficient}` hint to the last user message, and tightens the whitespace around the `<think>` block. Tool calls use the same Hermes-style format, so it also reuses `qwen3_5_schema` for response parsing.
+
+### `phi3.jinja`
+
+Original Phi-3 chat template.
+
+### `phi3_5.jinja`
+
+Original Phi-3.5 chat template.
+
 ### `qwen2_5.jinja`
 
 Original Qwen2.5 chat template.
+
+### `qwen2_5_vl.jinja`
+
+Original Qwen2.5-VL chat template. Also matches Qwen2-VL, which ships a byte-identical template. Does not support tool calling.
 
 ### `qwen3.jinja`
 
@@ -49,17 +93,32 @@ Original Qwen3 chat template.
 
 Original Qwen3-VL chat template. Unlike text-only Qwen3, this template is already prefix-preserving (no conditional thinking blocks), so no training patch is needed.
 
-### `qwen3_5_2b_and_below.jinja` / `qwen3_5_4b_and_above.jinja`
+### `qwen3_5_think.jinja` / `qwen3_5_nothink.jinja`
 
-Original Qwen3.5 chat templates.
+Original Qwen3.5 chat templates. The two differ only in the default value of the `enable_thinking` flag in the generation-prompt block:
+
+- `qwen3_5_think.jinja` — defaults to thinking enabled. Shipped by Qwen3.5-4B and larger.
+- `qwen3_5_nothink.jinja` — defaults to thinking disabled. Shipped by Qwen3.5-2B and smaller.
 
 ### `qwen3_6.jinja`
 
-Original Qwen3.6 chat template (shared across `Qwen3.6-27B`, `Qwen3.6-35B-A3B`, and their FP8 variants). Differs from `qwen3_5_4b_and_above.jinja` by adding a `preserve_thinking` flag and tweaking how non-string tool-call argument values are stringified.
+Original Qwen3.6 chat template (shared across `Qwen3.6-27B`, `Qwen3.6-35B-A3B`, and their FP8 variants). Differs from `qwen3_5_think.jinja` by adding a `preserve_thinking` flag and tweaking how non-string tool-call argument values are stringified.
 
 ## Training templates
 
 Patched templates that fix training-specific issues. Swapped in at init when tools are enabled (GRPO) or when `assistant_only_loss=True` (SFT).
+
+### `cohere_training.jinja`
+
+Patched Cohere template. Diff vs `cohere.jinja`:
+
+Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so that `return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
+
+### `cohere2_training.jinja`
+
+Patched Cohere2 template. Diff vs `cohere2.jinja`:
+
+Move the trailing `<|END_OF_TURN_TOKEN|>` from after the role-dispatch `{% endif %}` into each role branch, so it can be wrapped together with the assistant content. Wrap the assistant branch (`<|START_RESPONSE|>...<|END_RESPONSE|><|END_OF_TURN_TOKEN|>`) with `{% generation %}` / `{% endgeneration %}` so that `return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
 
 ### `deepseekv3_training.jinja`
 
@@ -73,6 +132,10 @@ Patched DeepSeek-V3 template. Diff vs `deepseekv3.jinja`:
 Patched Gemma template, shared by Gemma (v1) and Gemma2 (which ship identical chat templates). Diff vs `gemma.jinja`:
 
 Split the unified message output line into role-specific branches, so the `<start_of_turn>model\n` prompt cue sits outside the generation block (it is not generated by the model), while the assistant's content and `<end_of_turn>\n` (which the model must learn to produce and to stop on) sit inside. Wrap the assistant content with `{% generation %}` / `{% endgeneration %}` so that `return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
+
+### `gemma3_training.jinja`
+
+Patched Gemma 3 template. Same diff as `gemma_training.jinja` (split the unified output line into role-specific branches so the `<start_of_turn>model\n` prompt cue sits outside the generation block, and wrap the assistant content with `{% generation %}` / `{% endgeneration %}`), applied to the Gemma 3 base template that supports system messages and multimodal content blocks.
 
 ### `glm4moe_training.jinja`
 
@@ -93,15 +156,55 @@ Patched GPT-OSS template. Diff vs `gptoss.jinja`:
 
 Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so that `return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
 
+### `idefics3_training.jinja`
+
+Patched Idefics3 template. Diff vs `idefics3.jinja`:
+
+Split the assistant message into its own branch so the `{% generation %}` / `{% endgeneration %}` markers wrap the assistant content. This enables `return_assistant_tokens_mask=True` to produce correct masks for SFT assistant-only loss.
+
 ### `llama3_training.jinja`
 
 Patched Llama 3 template. Diff vs `llama3.jinja`:
 
 Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so that `return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
 
+### `llava_next_training.jinja`
+
+Patched Llava-Next template. Diff vs `llava_next.jinja`:
+
+Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so that `return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
+
+### `nemotron_3_nano_training.jinja`
+
+Patched Nemotron Nano template. Diff vs `nemotron_3_nano.jinja`:
+
+Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so that
+`return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
+
+### `nemotron_3_super_training.jinja`
+
+Patched Nemotron Super template. Diff vs `nemotron_3_super.jinja`:
+
+Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so that
+`return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
+
+### `nemotron_3_ultra_training.jinja`
+
+Patched Nemotron Ultra template. Diff vs `nemotron_3_ultra.jinja`:
+
+Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so that
+`return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
+
 ### `phi3_training.jinja`
 
 Patched Phi-3 template. Diff vs `phi3.jinja`:
+
+Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so that
+`return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
+
+### `phi3_5_training.jinja`
+
+Patched Phi-3.5 template. Diff vs `phi3.5.jinja`:
 
 Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so that
 `return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
@@ -111,6 +214,12 @@ Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so
 Patched Qwen2.5 template. Diff vs `qwen2_5.jinja`:
 
 Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so that `return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
+
+### `qwen2_5_vl_training.jinja`
+
+Patched Qwen2.5-VL template (also used for Qwen2-VL, which ships a byte-identical template). Diff vs `qwen2_5_vl.jinja`:
+
+Split the assistant message into its own branch so the `&#123;% generation %&#125;` / `&#123;% endgeneration %&#125;` markers wrap the assistant content.  This enables `return_assistant_tokens_mask=True` to produce correct masks for SFT assistant-only loss.
 
 ### `qwen3_training.jinja`
 
@@ -139,6 +248,16 @@ Always include the thinking block regardless of message position. The original c
 ```
 
 Wrap assistant message output with `{% generation %}` / `{% endgeneration %}` so that `return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
+
+### `qwen3_vl_training.jinja`
+
+Patched Qwen3-VL template. Diff vs `qwen3_vl.jinja`:
+
+Wrap assistant message output (both `content` and `tool_calls`) with `{% generation %}` / `{% endgeneration %}` so that `return_assistant_tokens_mask=True` produces correct masks for SFT assistant-only loss.
+
+### `qwen3_5_think_training.jinja` / `qwen3_5_nothink_training.jinja`
+
+Patched Qwen3.5 templates. Same diff as `qwen3_training.jinja` (require both `<think>` and `</think>` before parsing, drop the `loop.index0 > ns.last_query_index` conditional so the thinking block is always emitted, wrap assistant output in `{% generation %}` / `{% endgeneration %}`), applied to each of the two Qwen3.5 base templates. The two training variants differ only in the default value of the `enable_thinking` flag, inherited from their respective base templates.
 
 ### `qwen3_6_training.jinja`
 

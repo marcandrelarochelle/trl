@@ -39,6 +39,10 @@ class DPOConfig(_BaseConfig):
         model_init_kwargs (`dict[str, Any]`, *optional*):
             Keyword arguments for [`~transformers.AutoModelForCausalLM.from_pretrained`], used when the `model`
             argument of the [`DPOTrainer`] is provided as a string.
+        trust_remote_code (`bool`, *optional*, defaults to `False`):
+            Whether to allow loading models and tokenizers that ship custom Python code from the Hub. Forwarded to
+            [`~transformers.AutoModelForCausalLM.from_pretrained`] and
+            [`~transformers.AutoProcessor.from_pretrained`].
         disable_dropout (`bool`, *optional*, defaults to `True`):
             Whether to disable dropout in the model and reference model.
 
@@ -72,8 +76,8 @@ class DPOConfig(_BaseConfig):
         loss_type (`list[str]`, *optional*, defaults to `["sigmoid"]`):
             Type of loss to use. Possible values are: `'sigmoid'`, `'hinge'`, `'ipo'`, `'exo_pair'`, `'nca_pair'`,
             `'robust'`, `'bco_pair'`, `'sppo_hard'`, `'aot'`, `'aot_unpaired'`, `'apo_zero'`, `'apo_down'`,
-            `'discopop'`, `'sft'`. If multiple loss types are provided, they will be combined using the weights
-            specified in `loss_weights`.
+            `'discopop'`, `'sft'`, `'sigmoid_norm'`. If multiple loss types are provided, they will be combined using
+            the weights specified in `loss_weights`.
         loss_weights (`list[float]`, *optional*):
             List of loss weights for multi-loss combinations. Used when combining multiple loss types. Example: `[0.8,
             0.2, 1.0]` for MPO. If not provided, defaults to equal weights (`1.0`) for all loss types.
@@ -152,6 +156,13 @@ class DPOConfig(_BaseConfig):
             "the `DPOTrainer` is provided as a string."
         },
     )
+    trust_remote_code: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to allow loading models and tokenizers that ship custom Python code from the Hub. "
+            "Forwarded to `AutoModelForCausalLM.from_pretrained` and `AutoProcessor.from_pretrained`."
+        },
+    )
     disable_dropout: bool = field(
         default=True,
         metadata={"help": "Whether to disable dropout in the model and reference model."},
@@ -213,8 +224,8 @@ class DPOConfig(_BaseConfig):
         metadata={
             "help": "Type of loss to use. Possible values are: `'sigmoid'`, `'hinge'`, `'ipo'`, `'exo_pair'`, "
             "`'nca_pair'`, `'robust'`, `'bco_pair'`, `'sppo_hard'`, `'aot'`, `'aot_unpaired'`, `'apo_zero'`, "
-            "`'apo_down'`, `'discopop'`, `'sft'`. If multiple loss types are provided, they will be combined using "
-            "the weights specified in `loss_weights`.",
+            "`'apo_down'`, `'discopop'`, `'sft'`, `'sigmoid_norm'`. If multiple loss types are provided, they will be "
+            "combined using the weights specified in `loss_weights`.",
         },
     )
     loss_weights: list[float] | None = field(

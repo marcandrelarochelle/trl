@@ -2861,6 +2861,9 @@ class GRPOTrainer(_BaseTrainer):
                 intermediate_loss = intermediate_loss / normalizer
             elif self.loss_type in ["cispo", "dapo", "vespo"]:
                 normalizer = inputs["num_items_in_batch"] / self.accelerator.num_processes
+                #see: https://github.com/huggingface/trl/pull/6024/changes#diff-964e6fd373aa93037604064cb2b822d7f8e2735e33f791065acf2c4c3552d393
+                if mode == "train":
+                    normalizer = normalizer * self.current_gradient_accumulation_steps / self.args.steps_per_generation
                 intermediate_loss = (per_token_stage_loss * mask).sum() / normalizer
             elif self.loss_type == "luspo":
                 # Unless importance_sampling_level="token" (not recommended here), per_token_stage_loss is expected to be (B, 1)

@@ -24,7 +24,7 @@ from collections.abc import Mapping, Sequence, Sized
 from contextlib import contextmanager
 from importlib.metadata import version
 from itertools import accumulate
-from typing import Any, Literal, List, Optional, TypeVar
+from typing import TypeVar
 
 import numpy as np
 import pandas as pd
@@ -42,7 +42,6 @@ from transformers import (
     is_comet_available,
     is_trackio_available,
 )
-from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from transformers.models.auto.auto_factory import _BaseAutoModelClass
 from transformers.utils import (
     is_peft_available,
@@ -647,7 +646,7 @@ def print_prompt_completions_sample(
 
     panel = Panel(table, expand=False, title=f"Step {step}", border_style="bold white")
     console.print(panel)
-                
+
 
 class RepeatSampler(Sampler):
     """

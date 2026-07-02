@@ -928,8 +928,6 @@ class GRPOTrainer(_BaseTrainer):
         if dataset is None:
             dataset = self.train_dataset
 
-        batch_size = self.args.generation_batch_size // self.num_generations
-
         return RepeatSampler(
             data_source=dataset,
             mini_repeat_count=self.num_generations,
@@ -2174,7 +2172,6 @@ class GRPOTrainer(_BaseTrainer):
             grouped = rewards_per_func.view(-1, num_generations, len(self.reward_funcs))
             mean_k = torch.nanmean(grouped, dim=1, keepdim=True)
             std_k = nanstd(grouped, dim=1, keepdim=True) if num_generations > 1 else torch.zeros_like(mean_k)
-
             reward_k = (grouped - mean_k) / (std_k + 1e-4)
             reward_k = reward_k.view(-1, len(self.reward_funcs))
             rewards = (reward_k * self.reward_weights.to(device).unsqueeze(0))
@@ -2197,6 +2194,7 @@ class GRPOTrainer(_BaseTrainer):
             std_rewards = rewards.std().expand_as(rewards) if rewards.numel() > 1 else torch.zeros_like(rewards)
             advantages = (rewards - rewards.mean()) / (std_rewards + 1e-4)
             is_std_zero = torch.isclose(std_rewards, torch.zeros_like(std_rewards))  # for logging
+
         else:
             raise ValueError(
                 f"Invalid multi_objective_aggregation: {self.multi_objective_aggregation}. Must be "
@@ -2215,11 +2213,10 @@ class GRPOTrainer(_BaseTrainer):
         for i, reward_func_name in enumerate(self.reward_func_names):
             mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
-
             std_func_rewards = nanstd(rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_func_rewards)
 
-        rewards = rewards_per_func.nansum(dim=1)
+        rewards = (rewards_per_func * self.reward_weights.to(rewards_per_func.device).unsqueeze(0)).nansum(dim=1)
 
         self._metrics[mode]["reward"].append(torch.nanmean(rewards).item())
         self._metrics[mode]["reward_std"].append(rewards.std().item())
@@ -2651,17 +2648,7 @@ class GRPOTrainer(_BaseTrainer):
                 normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0  # no accum in eval
                 intermediate_loss = intermediate_loss / normalizer
             elif self.loss_type in ["cispo", "dapo", "vespo"]:
-                # `num_items_in_batch` counts the completion tokens of the full generation batch, which spans
-                # `steps_per_generation` micro-steps, while gradients are only accumulated over
-                # `gradient_accumulation_steps` micro-steps. When the two differ, normalizing every micro-step by the
-                # generation-batch token count scales the accumulated loss by
-                # gradient_accumulation_steps / steps_per_generation. Rescale the normalizer to the token count
-                # expected in one accumulation window. See https://github.com/huggingface/trl/issues/5619.
                 normalizer = inputs["num_items_in_batch"] / self.accelerator.num_processes
-
-                if mode == "train":  # in eval, the batch is neither split across steps nor accumulated
-                    normalizer = normalizer * self.current_gradient_accumulation_steps / self.args.steps_per_generation
-
                 intermediate_loss = (per_token_stage_loss * mask).sum() / normalizer
             elif self.loss_type == "luspo":
                 # Unless importance_sampling_level="token" (not recommended here), per_token_stage_loss is expected to be (B, 1)

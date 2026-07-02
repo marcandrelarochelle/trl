@@ -1040,8 +1040,6 @@ class GRPOTrainer(_BaseTrainer):
         if dataset is None:
             dataset = self.train_dataset
 
-        batch_size = self.args.generation_batch_size // self.num_generations
-
         return RepeatSampler(
             data_source=dataset,
             mini_repeat_count=self.num_generations,
@@ -2403,7 +2401,6 @@ class GRPOTrainer(_BaseTrainer):
         for i, reward_func_name in enumerate(self.reward_func_names):
             mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
-
             std_func_rewards = nanstd(rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_func_rewards)
         rewards = (rewards_per_func * self.reward_weights.to(rewards_per_func.device).unsqueeze(0)).nansum(dim=1)
@@ -2836,13 +2833,13 @@ class GRPOTrainer(_BaseTrainer):
             per_token_loss = per_token_loss + self.beta * per_token_kl
 
         mode = "train" if self.model.training else "eval"
-        loss = 0
+        loss = torch.tensor(0, dtype=per_token_loss.dtype, device=per_token_loss.device)
 
         if self.use_multi_stage_loss:
             stage_mask = self._create_mask_between_markers(completion_ids)
             multi_stage_mask = [stage_mask, ~stage_mask]
         else:
-            multi_stage_mask = [1.0]
+            multi_stage_mask = [torch.tensor(1, dtype=per_token_loss.dtype, device=per_token_loss.device)]
 
         for stage_mask in multi_stage_mask:
             per_token_stage_loss = per_token_loss * stage_mask
